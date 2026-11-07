@@ -1,0 +1,21 @@
+{
+    "name": "DjedCall — غرف صوتية مباشرة",
+    "short_name": "DjedCall",
+    "description": "غرف صوتية جماعية مباشرة بتقنية WebRTC بدون خادم تطبيق أو تخزين.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#05070d",
+    "theme_color": "#05070d",
+    "dir": "rtl",
+    "lang": "ar",
+    "icons": [
+        {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}

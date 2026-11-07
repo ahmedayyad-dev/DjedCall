@@ -61,6 +61,8 @@ vendor/               PeerJS مستضاف محلياً
 fonts/                خط Tajawal ورخصة OFL
 _headers              رؤوس الأمان
 _redirects            إعادة توجيه المسارات إلى index.html
+icon.svg              أيقونة التطبيق (رمز عمود الجد)
+manifest.webmanifest  بيانات تطبيق الويب للتثبيت على الهاتف (PWA)
 AI_CONSTITUTION.md    قواعد التطوير والالتزام للمشروع
 LICENSE               رخصة كود المشروع (MIT)
 THIRD_PARTY_NOTICES.md  رخص المكتبات والأصول الخارجية
