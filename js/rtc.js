@@ -38,6 +38,7 @@ export const state = {
     myId: '',
     myName: '',
     inRoom: false,
+    joining: false,
     muted: false,
 
     peers: new Map(),
@@ -109,70 +110,75 @@ const micErrorMessage = (error) => {
 const connections = () => [...state.peers.values()].map((entry) => entry.pc).filter(Boolean);
 
 export async function join(roomRaw, name) {
-    if (state.inRoom) return;
-
-    const roomKey = sanitizeRoom(roomRaw);
-    if (!roomKey) {
-        ui.toast(STR.roomInvalid, 'error');
-        return;
-    }
+    if (state.inRoom || state.joining) return;
+    state.joining = true;
 
     try {
-        await audio.acquireMic();
-    } catch (error) {
-        ui.toast(micErrorMessage(error), 'error');
-        return;
-    }
-
-    Object.assign(state, {
-        roomKey,
-        roomLabel: cleanRoomLabel(roomRaw) || roomKey,
-        myName: cleanName(name) || STR.defaultName,
-        muted: false,
-        inRoom: true,
-        chatHistory: [],
-        historyLoaded: false,
-        lastSendAt: 0,
-        localNotified: false,
-    });
-    state.relayMembers.clear();
-
-    ui.showRoom();
-    ui.setRoomHeader(state.roomLabel, state.myName);
-    writeRoute(state.roomLabel);
-    ui.resetChat();
-    ui.renderLocalCard(state.myName);
-    ui.updateMicButton(false);
-    ui.updatePeersCount(1);
-    ui.setBitrateText(STR.bitrateIdle);
-
-    audio.setMicEnabled(true);
-    audio.startVAD();
-    audio.startBitrateStats(connections, onBitrate);
-
-    try {
-        state.peer = await createPeer(`${PEER_PREFIX}${roomKey}-${randomId(8)}`);
-    } catch {
-        ui.toast(STR.connectFailed, 'error');
-        teardown();
-        ui.showLobby();
-        return;
-    }
-
-    state.myId = state.peer.id;
-    state.peer.on('connection', onIncomingData);
-    state.peer.on('call', onIncomingCall);
-    state.peer.on('disconnected', () => {
-        if (!state.inRoom) return;
-        try {
-            state.peer.reconnect();
-        } catch {
-            /* إعادة الاتصال غير متاحة */
+        const roomKey = sanitizeRoom(roomRaw);
+        if (!roomKey) {
+            ui.toast(STR.roomInvalid, 'error');
+            return;
         }
-    });
-    state.peer.on('error', onPeerError);
 
-    await joinDiscovery();
+        try {
+            await audio.acquireMic();
+        } catch (error) {
+            ui.toast(micErrorMessage(error), 'error');
+            return;
+        }
+
+        Object.assign(state, {
+            roomKey,
+            roomLabel: cleanRoomLabel(roomRaw) || roomKey,
+            myName: cleanName(name) || STR.defaultName,
+            muted: false,
+            inRoom: true,
+            chatHistory: [],
+            historyLoaded: false,
+            lastSendAt: 0,
+            localNotified: false,
+        });
+        state.relayMembers.clear();
+
+        ui.showRoom();
+        ui.setRoomHeader(state.roomLabel, state.myName);
+        writeRoute(state.roomLabel);
+        ui.resetChat();
+        ui.renderLocalCard(state.myName);
+        ui.updateMicButton(false);
+        ui.updatePeersCount(1);
+        ui.setBitrateText(STR.bitrateIdle);
+
+        audio.setMicEnabled(true);
+        audio.startVAD();
+        audio.startBitrateStats(connections, onBitrate);
+
+        try {
+            state.peer = await createPeer(`${PEER_PREFIX}${roomKey}-${randomId(8)}`);
+        } catch {
+            ui.toast(STR.connectFailed, 'error');
+            teardown();
+            ui.showLobby();
+            return;
+        }
+
+        state.myId = state.peer.id;
+        state.peer.on('connection', onIncomingData);
+        state.peer.on('call', onIncomingCall);
+        state.peer.on('disconnected', () => {
+            if (!state.inRoom) return;
+            try {
+                state.peer.reconnect();
+            } catch {
+                /* إعادة الاتصال غير متاحة */
+            }
+        });
+        state.peer.on('error', onPeerError);
+
+        await joinDiscovery();
+    } finally {
+        state.joining = false;
+    }
 }
 
 function onBitrate(kbps) {
@@ -185,6 +191,7 @@ function onPeerError(error) {
 
 export function leave() {
     if (!state.inRoom) return;
+    broadcast({ type: 'bye', id: state.myId });
     teardown();
     ui.showLobby();
     ui.toast(STR.leftRoom);
@@ -386,7 +393,9 @@ function onRelayConnection(conn) {
         if (!message || typeof message !== 'object' || message.type !== 'hello') return;
         if (typeof message.name === 'string' && message.name.length > RAW_NAME_MAX) return;
         const name = cleanName(message.name) || STR.defaultName;
+        const isExisting = state.relayMembers.has(conn.peer);
         state.relayMembers.set(conn.peer, { name, conn });
+        if (isExisting) return;
 
         safeSend(conn, {
             type: 'peer-list',
@@ -746,6 +755,11 @@ function handleData(peerId, message) {
             return;
         }
 
+        if (message.type === 'bye') {
+            dropPeer(peerId);
+            return;
+        }
+
         if (message.type === 'state') {
             const now = Date.now();
             if (entry.lastStateAt && now - entry.lastStateAt < 200) return;
@@ -806,6 +820,7 @@ export function rename(nextName) {
     state.myName = name;
     ui.setMyName(name);
     broadcast({ type: 'hello', name });
+    safeSend(state.relayConn, { type: 'hello', name });
     return true;
 }
 

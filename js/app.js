@@ -23,17 +23,11 @@ const renameInput = $('rename-input');
 const renameCancelBtn = $('rename-cancel-btn');
 const chatToggleButtons = [$('toggle-chat-header-btn'), $('toggle-chat-footer-btn')];
 const closeChatBtn = $('close-chat-btn');
+const joinRoomBtn = $('join-room-btn');
 
 async function handleJoin(event) {
     event.preventDefault();
-    if (rtc.state.inRoom) return;
-
-    const room = roomInput.value.trim();
-    if (!room) {
-        ui.toast(STR.roomRequired, 'error');
-        roomInput.focus();
-        return;
-    }
+    if (rtc.state.inRoom || rtc.state.joining) return;
 
     const typedName = usernameInput.value.trim();
     const name = cleanName(typedName);
@@ -43,11 +37,24 @@ async function handleJoin(event) {
         return;
     }
 
+    const room = roomInput.value.trim();
+    if (!room) {
+        ui.toast(STR.roomRequired, 'error');
+        roomInput.focus();
+        return;
+    }
+
     writeStorage(STORAGE_KEYS.name, name);
     writeStorage(STORAGE_KEYS.room, room);
 
+    if (joinRoomBtn) joinRoomBtn.disabled = true;
+
     audio.ensureAudioContext();
-    await rtc.join(room, name);
+    try {
+        await rtc.join(room, name);
+    } finally {
+        if (joinRoomBtn) joinRoomBtn.disabled = false;
+    }
 }
 
 async function handleMicTest() {

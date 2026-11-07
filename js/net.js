@@ -40,7 +40,9 @@ export async function describeConnection(pc) {
         if (local.candidateType === 'relay' || remote.candidateType === 'relay') return 'relay';
 
         const hostPair = local.candidateType === 'host' && remote.candidateType === 'host';
-        if (hostPair && isLocalAddress(local.address) && isLocalAddress(remote.address)) return 'local';
+        const localAddr = local.address || local.ip;
+        const remoteAddr = remote.address || remote.ip;
+        if (hostPair && isLocalAddress(localAddr) && isLocalAddress(remoteAddr)) return 'local';
 
         return 'direct';
     } catch {
