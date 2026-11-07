@@ -16,6 +16,7 @@ export const STR = {
     routeLocal: 'محلي',
     routeDirect: 'مباشر',
     routeRelay: 'عبر خادم',
+    routeConnecting: 'جاري التوصيل...',
     peerLocal: (name) => `${name} معاك على نفس الشبكة ▪ الصوت محلي`,
     chatStart: 'بداية المحادثة في الغرفة',
 

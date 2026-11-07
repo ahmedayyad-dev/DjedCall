@@ -172,6 +172,7 @@ export function addPeerCard(id, name) {
     const card = buildCard(id, name, STR.online);
     cards.set(id, card);
     refs.grid.append(card);
+    setPeerRoute(id, 'connecting');
     return card;
 }
 
@@ -189,8 +190,12 @@ export function setPeerRoute(id, route) {
     const badge = card?.querySelector('.p-route');
     if (!badge) return;
 
-    const label =
-        route === 'local' ? STR.routeLocal : route === 'direct' ? STR.routeDirect : route === 'relay' ? STR.routeRelay : '';
+    let label = '';
+    if (route === 'local') label = STR.routeLocal;
+    else if (route === 'direct') label = STR.routeDirect;
+    else if (route === 'relay') label = STR.routeRelay;
+    else if (route === 'connecting') label = STR.routeConnecting;
+
     badge.textContent = label;
     badge.dataset.route = route;
     badge.hidden = !label;

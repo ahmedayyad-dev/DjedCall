@@ -679,6 +679,7 @@ function watchPeerConnection(peerId, pc) {
             clearTimeout(disconnectTimer);
             dropPeer(peerId);
         } else if (pc.iceConnectionState === 'disconnected') {
+            ui.setPeerRoute(peerId, 'connecting');
             clearTimeout(disconnectTimer);
             disconnectTimer = setTimeout(() => {
                 const current = state.peers.get(peerId);
@@ -691,6 +692,7 @@ function watchPeerConnection(peerId, pc) {
             }, 15000);
         } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
             clearTimeout(disconnectTimer);
+            trackRoute(peerId, pc);
         }
     };
 
@@ -709,7 +711,7 @@ function trackRoute(peerId, pc) {
         const route = await describeConnection(pc);
         if (route === 'unknown') {
             attempts += 1;
-            if (attempts < 4) setTimeout(check, 1500);
+            if (attempts < 8) setTimeout(check, 800);
             return;
         }
 
@@ -723,7 +725,7 @@ function trackRoute(peerId, pc) {
         }
     };
 
-    setTimeout(check, 800);
+    setTimeout(check, 400);
 }
 
 function attachRemote(peerId, stream) {

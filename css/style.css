@@ -1200,11 +1200,18 @@
         font-size: .56rem;
         font-weight: 700;
         line-height: 1.5;
-        color: var(--gold-bright);
-        background: color-mix(in oklab, var(--gold) 14%, transparent);
-        border: 1px solid color-mix(in oklab, var(--gold) 32%, transparent);
+        color: #86efac;
+        background: color-mix(in oklab, #22c55e 14%, transparent);
+        border: 1px solid color-mix(in oklab, #22c55e 32%, transparent);
         border-radius: var(--pill);
         vertical-align: middle;
+        transition: color .2s ease, background-color .2s ease, border-color .2s ease;
+    }
+
+    .p-route[data-route="local"] {
+        color: #86efac;
+        background: color-mix(in oklab, #22c55e 14%, transparent);
+        border-color: color-mix(in oklab, #22c55e 32%, transparent);
     }
 
     .p-route[data-route="direct"] {
@@ -1214,9 +1221,15 @@
     }
 
     .p-route[data-route="relay"] {
-        color: #fca5a5;
-        background: color-mix(in oklab, #ef4444 14%, transparent);
-        border-color: color-mix(in oklab, #ef4444 32%, transparent);
+        color: #d8b4fe;
+        background: color-mix(in oklab, #c084fc 16%, transparent);
+        border-color: color-mix(in oklab, #c084fc 32%, transparent);
+    }
+
+    .p-route[data-route="connecting"] {
+        color: var(--text-faint);
+        background: color-mix(in oklab, var(--text-faint) 12%, transparent);
+        border-color: color-mix(in oklab, var(--text-faint) 24%, transparent);
     }
 
     .p-mute {
