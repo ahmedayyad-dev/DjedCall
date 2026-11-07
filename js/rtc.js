@@ -219,7 +219,14 @@ function onBitrate(kbps) {
 }
 
 function onPeerError(error) {
-    if (error?.type === 'browser-incompatible') ui.toast(STR.browserUnsupported, 'error');
+    if (error?.type === 'browser-incompatible') {
+        ui.toast(STR.browserUnsupported, 'error');
+    } else if (error?.type === 'network' || error?.type === 'server-error' || error?.type === 'socket-error') {
+        if (state.inRoom) {
+            clearTimeout(roamingTimer);
+            roamingTimer = setTimeout(recoverNetworkSession, 1200);
+        }
+    }
 }
 
 export function leave() {
@@ -360,7 +367,7 @@ function connectToRelay(slot = 0) {
             /* أُغلق مسبقاً */
         }
         scheduleRelayClaim(slot === 0 ? 1 : 0);
-    }, 2500);
+    }, 7000);
 
     conn.on('open', () => safeSend(conn, { type: 'hello', name: state.myName }));
     conn.on('data', (message) => {
@@ -376,7 +383,11 @@ function connectToRelay(slot = 0) {
             const rawName = typeof message.name === 'string' && message.name.length <= RAW_NAME_MAX ? message.name : '';
             ui.toast(STR.peerJoined(cleanName(rawName) || STR.defaultName), 'join');
         } else if (message.type === 'peer-left') {
-            if (typeof message.id === 'string' && peerInRoom(message.id)) dropPeer(message.id);
+            if (typeof message.id === 'string' && peerInRoom(message.id)) {
+                const peer = state.peers.get(message.id);
+                if (peer && peer.dataConn?.open) return;
+                dropPeer(message.id);
+            }
         }
     });
     conn.on('close', () => {
@@ -789,11 +800,6 @@ function watchPeerConnection(peerId, pc) {
         } else if (pc.iceConnectionState === 'disconnected') {
             ui.setPeerRoute(peerId, 'connecting');
             clearTimeout(disconnectTimer);
-            try {
-                pc.restartIce?.();
-            } catch {
-                /* بعض المتصفحات لا تدعم restartIce مباشرة */
-            }
             disconnectTimer = setTimeout(() => {
                 const current = state.peers.get(peerId);
                 if (
@@ -802,7 +808,7 @@ function watchPeerConnection(peerId, pc) {
                 ) {
                     dropPeer(peerId);
                 }
-            }, 8000);
+            }, 10000);
         } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
             clearTimeout(disconnectTimer);
             trackRoute(peerId, pc);
@@ -959,21 +965,31 @@ function startHeartbeat() {
             return;
         }
 
-        // 2. حارس البوابة: التأكد الدائم من البقاء متصلاً بالغرفة
-        if (!state.isRelay) {
-            if (!state.relayConn || !state.relayConn.open) {
-                relayWatchTicks += 1;
-                if (relayWatchTicks >= 2) {
+        // 2. حارس البوابة: إذا كنا وحدنا في الغرفة، نتحقق من اتصال البوابة بهدوء
+        if (state.peers.size === 0) {
+            if (!state.isRelay) {
+                if (!state.relayConn || !state.relayConn.open) {
+                    relayWatchTicks += 1;
+                    if (relayWatchTicks >= 4) {
+                        relayWatchTicks = 0;
+                        connectToRelay(state.relaySlot || 0);
+                    }
+                } else {
                     relayWatchTicks = 0;
-                    connectToRelay(state.relaySlot || 0);
+                    aloneTicks += 1;
+                    if (aloneTicks >= 4) {
+                        aloneTicks = 0;
+                        safeSend(state.relayConn, { type: 'hello', name: state.myName });
+                    }
                 }
             } else {
-                relayWatchTicks = 0;
+                if (!state.relayPeer || state.relayPeer.destroyed || state.relayPeer.disconnected) {
+                    joinDiscovery(state.relaySlot || 0);
+                }
             }
         } else {
-            if (!state.relayPeer || state.relayPeer.destroyed || state.relayPeer.disconnected) {
-                joinDiscovery(state.relaySlot || 0);
-            }
+            relayWatchTicks = 0;
+            aloneTicks = 0;
         }
 
         // 3. نبضات فحص الأقران
@@ -985,21 +1001,6 @@ function startHeartbeat() {
                     dropPeer(peerId);
                 }
             }
-        }
-
-        // 4. إذا وجد الجهاز نفسه وحيداً في الغرفة، يتحقق دورياً من البوابة لإعادة وصل الأطراف
-        if (state.peers.size === 0 && !state.isRelay) {
-            aloneTicks += 1;
-            if (aloneTicks >= 2) {
-                aloneTicks = 0;
-                if (!state.relayConn || !state.relayConn.open) {
-                    connectToRelay(state.relaySlot || 0);
-                } else {
-                    safeSend(state.relayConn, { type: 'hello', name: state.myName });
-                }
-            }
-        } else {
-            aloneTicks = 0;
         }
     }, 2000);
 }
