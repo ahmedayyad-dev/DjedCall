@@ -664,6 +664,13 @@ function onIncomingData(conn) {
     entry.dataConn = conn;
     entry.lastSeen = Date.now();
 
+    const sendHello = () => {
+        entry.lastSeen = Date.now();
+        safeSend(conn, { type: 'hello', name: state.myName, muted: state.muted });
+    };
+    if (conn.open) sendHello();
+    else conn.on('open', sendHello);
+
     conn.on('data', (message) => handleData(conn.peer, message));
     conn.on('close', () => {
         const current = state.peers.get(conn.peer);
@@ -918,21 +925,58 @@ function dropPeer(peerId, { silent = false } = {}) {
     if (silent) return;
     ui.toast(STR.peerLeft(entry.name), 'leave');
     audio.chime('leave');
+
+    /* إذا أصبح الجهاز وحيداً بعد مغادرة الطرف الآخر، يفحص البوابة فوراً لإعادة الوصل */
+    if (state.inRoom && state.peers.size === 0 && !state.isRelay) {
+        if (!state.relayConn || !state.relayConn.open) {
+            connectToRelay(state.relaySlot || 0);
+        } else {
+            safeSend(state.relayConn, { type: 'hello', name: state.myName });
+        }
+    }
 }
 
 /* --------------------------- الرسائل والنبض الدوري --------------------------- */
 
 let heartbeatTimer = null;
 let aloneTicks = 0;
+let relayWatchTicks = 0;
 
 function startHeartbeat() {
     stopHeartbeat();
     aloneTicks = 0;
+    relayWatchTicks = 0;
+
     heartbeatTimer = setInterval(() => {
         if (!state.inRoom) {
             stopHeartbeat();
             return;
         }
+
+        // 1. حارس مقبس التنسيق: إذا انقطع الاتصال بالخادم، يبدأ التعافي فوراً
+        if (!state.peer || state.peer.destroyed || state.peer.disconnected) {
+            recoverNetworkSession();
+            return;
+        }
+
+        // 2. حارس البوابة: التأكد الدائم من البقاء متصلاً بالغرفة
+        if (!state.isRelay) {
+            if (!state.relayConn || !state.relayConn.open) {
+                relayWatchTicks += 1;
+                if (relayWatchTicks >= 2) {
+                    relayWatchTicks = 0;
+                    connectToRelay(state.relaySlot || 0);
+                }
+            } else {
+                relayWatchTicks = 0;
+            }
+        } else {
+            if (!state.relayPeer || state.relayPeer.destroyed || state.relayPeer.disconnected) {
+                joinDiscovery(state.relaySlot || 0);
+            }
+        }
+
+        // 3. نبضات فحص الأقران
         const now = Date.now();
         for (const [peerId, entry] of state.peers) {
             if (entry.dataConn?.open) {
@@ -943,10 +987,10 @@ function startHeartbeat() {
             }
         }
 
-        /* إذا وجد الجهاز نفسه وحيداً في الغرفة، يتحقق دورياً من البوابة لإعادة وصل الأطراف */
+        // 4. إذا وجد الجهاز نفسه وحيداً في الغرفة، يتحقق دورياً من البوابة لإعادة وصل الأطراف
         if (state.peers.size === 0 && !state.isRelay) {
             aloneTicks += 1;
-            if (aloneTicks >= 4) {
+            if (aloneTicks >= 2) {
                 aloneTicks = 0;
                 if (!state.relayConn || !state.relayConn.open) {
                     connectToRelay(state.relaySlot || 0);
@@ -957,7 +1001,7 @@ function startHeartbeat() {
         } else {
             aloneTicks = 0;
         }
-    }, 3000);
+    }, 2000);
 }
 
 function stopHeartbeat() {
