@@ -133,7 +133,8 @@ function init() {
     closeChatBtn.addEventListener('click', () => ui.setChatOpen(false));
 
     document.addEventListener('pointerdown', () => audio.ensureAudioContext(), { passive: true });
-    window.addEventListener('beforeunload', () => rtc.teardown());
+    window.addEventListener('beforeunload', () => rtc.leave());
+    window.addEventListener('pagehide', () => rtc.leave());
 
     const savedName = cleanName(readStorage(STORAGE_KEYS.name));
     if (savedName) usernameInput.value = savedName;

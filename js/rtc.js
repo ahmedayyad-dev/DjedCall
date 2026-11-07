@@ -191,10 +191,22 @@ function onPeerError(error) {
 
 export function leave() {
     if (!state.inRoom) return;
+
     broadcast({ type: 'bye', id: state.myId });
-    teardown();
+
+    if (state.isRelay) {
+        for (const member of state.relayMembers.values()) {
+            safeSend(member.conn, { type: 'peer-left', id: state.myId });
+        }
+    }
+
     ui.showLobby();
     ui.toast(STR.leftRoom);
+
+    /* نمهل المتصفح فترة وجيزة لتفريغ رسالة الوداع عبر الشبكة قبل هدم المقابس */
+    setTimeout(() => {
+        teardown();
+    }, 150);
 }
 
 export function teardown() {
@@ -581,6 +593,7 @@ function onIncomingCall(call) {
         entry.pc = pc;
         audio.applyLowBitrate(pc);
         trackRoute(call.peer, pc);
+        watchPeerConnection(call.peer, pc);
     });
 }
 
@@ -618,7 +631,45 @@ function startMediaCall(peerId) {
         entry.pc = pc;
         audio.applyLowBitrate(pc);
         trackRoute(peerId, pc);
+        watchPeerConnection(peerId, pc);
     });
+}
+
+/* مراقبة حالة اتصال WebRTC وإسقاط المشارك فور فقدانه أو انقطاعه */
+function watchPeerConnection(peerId, pc) {
+    if (!pc || typeof pc.addEventListener !== 'function') return;
+
+    let disconnectTimer = null;
+
+    const onStateChange = () => {
+        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+            clearTimeout(disconnectTimer);
+            dropPeer(peerId);
+        }
+    };
+
+    const onIceChange = () => {
+        if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+            clearTimeout(disconnectTimer);
+            dropPeer(peerId);
+        } else if (pc.iceConnectionState === 'disconnected') {
+            clearTimeout(disconnectTimer);
+            disconnectTimer = setTimeout(() => {
+                const current = state.peers.get(peerId);
+                if (
+                    current?.pc === pc &&
+                    (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')
+                ) {
+                    dropPeer(peerId);
+                }
+            }, 3500);
+        } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+            clearTimeout(disconnectTimer);
+        }
+    };
+
+    pc.addEventListener('connectionstatechange', onStateChange);
+    pc.addEventListener('iceconnectionstatechange', onIceChange);
 }
 
 /* يكشف مسار الوسائط الفعلي بعد نجاح ICE ويظهره على بطاقة المشارك */
