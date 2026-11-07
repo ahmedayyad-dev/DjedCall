@@ -1,0 +1,46 @@
+/* حماية المدخلات: تنظيف الأسماء والرسائل، منع الروابط، والتحقق من المعرّفات */
+
+import { CHAT_MAX, NAME_MAX, PEER_ID_PATTERN, ROOM_MAX } from './config.js';
+
+/* محارف تحكم ومحارف اتجاه مخفية تُستخدم لتزوير النص */
+const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g;
+const NAME_ALLOWED = /[^\p{L}\p{N} ._-]/gu;
+const LINK_PATTERN =
+    /(?:https?:\/\/|www\.|t\.me\/|wa\.me\/|\b[a-z0-9-]+\.(?:com|net|org|io|me|ly|gg|link|site|xyz|dev|app|info|online|shop|top|club)\b)/i;
+
+const clamp = (value, max) => [...value].slice(0, max).join('');
+
+export function cleanName(value, max = NAME_MAX) {
+    return clamp(
+        String(value ?? '')
+            .replace(CONTROL, ' ')
+            .replace(/\s+/g, ' ')
+            .replace(NAME_ALLOWED, '')
+            .trim(),
+        max,
+    ).trim();
+}
+
+export function cleanRoomLabel(value, max = ROOM_MAX) {
+    return cleanName(value, max);
+}
+
+export function cleanMessage(value, max = CHAT_MAX) {
+    return clamp(
+        String(value ?? '')
+            .replace(/\r\n?/g, '\n')
+            .replace(CONTROL, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .replace(/[ \t]{2,}/g, ' ')
+            .trim(),
+        max,
+    ).trim();
+}
+
+export function hasLink(text) {
+    return LINK_PATTERN.test(String(text ?? ''));
+}
+
+export function validPeerId(id) {
+    return typeof id === 'string' && PEER_ID_PATTERN.test(id);
+}

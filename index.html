@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>DjedCall — غرف صوتية سريعة وخفيفة</title>
+    <meta name="description" content="غرف صوتية جماعية مباشرة بتقنية WebRTC، بدون خادم تطبيق أو تخزين، باستهلاك اقتصادي 16kbps.">
+    <meta name="theme-color" content="#05070d">
+    <meta name="color-scheme" content="dark">
+    <meta name="referrer" content="no-referrer">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="DjedCall — غرف صوتية سريعة وخفيفة">
+    <meta property="og:description" content="اعمل غرفة صوتية وابعت الرابط. اتصال مشفر مباشر بين الأجهزة، بدون تخزين.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f59e0b' stroke-width='2' stroke-linecap='round'><path d='M12 2v20'/><path d='M7 6h10'/><path d='M5.5 10h13'/><path d='M7 14h10'/><path d='M9 18h6'/></svg>">
+
+    <link rel="stylesheet" href="/css/style.css">
+
+    <script src="/vendor/peerjs.min.js" defer integrity="sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu"></script>
+</head>
+<body>
+
+    <!-- حزمة أيقونات SVG مضمّنة: صفر مكتبات، صفر طلبات إضافية -->
+    <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+        <symbol id="i-djed" viewBox="0 0 24 24"><path d="M12 2v20"/><path d="M7 6h10"/><path d="M5.5 10h13"/><path d="M7 14h10"/><path d="M9 18h6"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+        <symbol id="i-hash" viewBox="0 0 24 24"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></symbol>
+        <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></symbol>
+        <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+        <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
+        <symbol id="i-mic-off" viewBox="0 0 24 24"><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
+        <symbol id="i-phone-call" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/><path d="M14.05 2a9 9 0 0 1 8 7.94"/><path d="M14.05 6A5 5 0 0 1 18 10"/></symbol>
+        <symbol id="i-phone-off" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/><line x1="22" x2="2" y1="2" y2="22"/></symbol>
+        <symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"/><path d="m9 12 2 2 4-4"/></symbol>
+        <symbol id="i-radio" viewBox="0 0 24 24"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></symbol>
+        <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+        <symbol id="i-share-2" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></symbol>
+        <symbol id="i-message-square" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></symbol>
+        <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+        <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.83a2.83 2.83 0 0 0-4-4L3 17v4h4L21.17 6.83Z"/><path d="m15 5 4 4"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+        <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+        <symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></symbol>
+        <symbol id="i-user-minus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="22" x2="16" y1="11" y2="11"/></symbol>
+        <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
+        <symbol id="i-signal" viewBox="0 0 24 24"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></symbol>
+    </svg>
+
+    <div id="toast-container" class="toasts" role="status" aria-live="polite"></div>
+
+    <!-- ===================== الردهة ===================== -->
+    <section id="lobby-view" class="lobby">
+        <div class="lobby-card">
+            <header class="brand">
+                <span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#i-djed"/></svg></span>
+                <h1 class="brand-name">DjedCall</h1>
+                <p class="brand-tag">غرف صوتية مباشرة ▪ صوت نقي ▪ استهلاك اقتصادي 16kbps</p>
+            </header>
+
+            <form id="join-form" class="form" novalidate>
+                <div class="field">
+                    <label for="username-input">اسمك المستعار</label>
+                    <div class="input-wrap">
+                        <svg class="icon input-icon" aria-hidden="true"><use href="#i-user"/></svg>
+                        <input id="username-input" type="text" maxlength="20" autocomplete="nickname" placeholder="مثلاً: أحمد">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-row">
+                        <label for="room-input">رمز الغرفة</label>
+                        <button type="button" id="random-room-btn" class="link-btn">
+                            <svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg>
+                            <span>رمز عشوائي</span>
+                        </button>
+                    </div>
+                    <div class="input-wrap">
+                        <svg class="icon input-icon" aria-hidden="true"><use href="#i-hash"/></svg>
+                        <input id="room-input" class="mono" type="text" maxlength="25" autocomplete="off" spellcheck="false" placeholder="مثال: qahwa-77">
+                    </div>
+                </div>
+
+                <div class="mic-test">
+                    <div class="mic-test-head">
+                        <span class="mic-test-title">
+                            <svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg>
+                            فحص حساسية المايكروفون
+                        </span>
+                        <button type="button" id="test-mic-btn" class="link-btn">
+                            <svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg>
+                            <span id="mic-test-status">جرّب المايك</span>
+                        </button>
+                    </div>
+                    <div class="meter"><div id="mic-test-bar" class="meter-fill"></div></div>
+                </div>
+
+                <button type="submit" id="join-room-btn" class="btn btn-primary btn-lg">
+                    <svg class="icon" aria-hidden="true"><use href="#i-phone-call"/></svg>
+                    <span>دخول الغرفة الصوتية</span>
+                </button>
+            </form>
+
+            <footer class="lobby-foot">
+                <span class="lobby-foot-item">
+                    <svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg>
+                    اتصال مشفر P2P مباشر
+                </span>
+                <span class="lobby-foot-item">لا يتم تخزين أي صوت</span>
+            </footer>
+        </div>
+    </section>
+
+    <!-- ===================== الغرفة ===================== -->
+    <div id="room-view" class="room" hidden>
+        <header class="room-header">
+            <div class="room-id">
+                <span class="room-glyph"><svg class="icon" aria-hidden="true"><use href="#i-radio"/></svg></span>
+                <div class="room-id-text">
+                    <span class="room-label">غرفة</span>
+                    <span id="active-room-name" class="room-code mono">—</span>
+                </div>
+                <span id="peers-count-badge" class="pill">1 متصل</span>
+                <span id="bitrate-indicator" class="pill pill-live">
+                    <i class="live-dot"></i>
+                    <span id="bitrate-text">16kbps ▪ DTX</span>
+                </span>
+            </div>
+
+            <div class="room-actions">
+                <button id="copy-link-btn" type="button" class="btn btn-ghost">
+                    <svg class="icon" aria-hidden="true"><use href="#i-share-2"/></svg>
+                    <span class="hide-sm">مشاركة الرابط</span>
+                </button>
+                <button id="toggle-chat-header-btn" type="button" class="btn btn-icon" aria-label="المحادثة">
+                    <svg class="icon" aria-hidden="true"><use href="#i-message-square"/></svg>
+                    <span id="unread-chat-badge" class="badge" hidden>0</span>
+                </button>
+            </div>
+        </header>
+
+        <main class="room-body">
+            <section class="stage" aria-label="المشاركون">
+                <div class="stage-bar">
+                    <button id="room-code-btn" type="button" class="room-chip" title="نسخ رابط الغرفة">
+                        <svg class="icon" aria-hidden="true"><use href="#i-hash"/></svg>
+                        <span class="room-chip-label">رمز الغرفة</span>
+                        <span id="stage-room-code" class="room-chip-code mono">—</span>
+                        <svg class="icon room-chip-copy" aria-hidden="true"><use href="#i-share-2"/></svg>
+                    </button>
+                    <span class="stage-me">
+                        <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
+                        <button id="edit-name-btn" type="button" class="stage-name-btn" title="تعديل اسمك" aria-label="تعديل اسمك">
+                            <span id="stage-my-name">أنت</span>
+                            <svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg>
+                        </button>
+                    </span>
+                    <form id="rename-form" class="rename-form" hidden novalidate>
+                        <input id="rename-input" class="rename-input" type="text" maxlength="20" autocomplete="nickname" placeholder="اسمك الجديد" aria-label="اسمك الجديد">
+                        <button type="submit" class="btn btn-primary">
+                            <svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>
+                            <span>حفظ</span>
+                        </button>
+                        <button type="button" id="rename-cancel-btn" class="btn btn-ghost">إلغاء</button>
+                    </form>
+                </div>
+                <div id="participants-grid" class="participants"></div>
+            </section>
+
+            <aside id="chat-sidebar" class="chat" aria-label="المحادثة النصية">
+                <div class="chat-head">
+                    <span class="chat-title">
+                        <svg class="icon" aria-hidden="true"><use href="#i-message-square"/></svg>
+                        المحادثة النصية
+                    </span>
+                    <button id="close-chat-btn" type="button" class="btn btn-icon" aria-label="إغلاق المحادثة">
+                        <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+                    </button>
+                </div>
+
+                <div id="chat-messages" class="chat-log" aria-live="polite"></div>
+
+                <form id="chat-form" class="chat-form">
+                    <input id="chat-input" type="text" maxlength="300" autocomplete="off" placeholder="اكتب رسالة...">
+                    <button type="submit" class="btn btn-primary btn-icon" aria-label="إرسال">
+                        <svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>
+                    </button>
+                </form>
+            </aside>
+        </main>
+
+        <footer class="control-bar">
+            <div class="me">
+                <span id="footer-user-avatar" class="me-avatar">أ</span>
+                <div class="me-text">
+                    <span id="footer-username" class="me-name">أنت</span>
+                    <span id="footer-status" class="me-status"><i class="live-dot"></i> متصل</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button id="toggle-mic-btn" type="button" class="btn btn-mic">
+                    <svg class="icon" aria-hidden="true"><use id="mic-icon" href="#i-mic"/></svg>
+                    <span id="mic-label">المايك يعمل</span>
+                </button>
+                <button id="leave-room-btn" type="button" class="btn btn-danger">
+                    <svg class="icon" aria-hidden="true"><use href="#i-phone-off"/></svg>
+                    <span>مغادرة</span>
+                </button>
+            </div>
+
+            <div class="side-actions">
+                <button id="toggle-chat-footer-btn" type="button" class="btn btn-icon" aria-label="المحادثة">
+                    <svg class="icon" aria-hidden="true"><use href="#i-message-square"/></svg>
+                    <span id="footer-chat-badge" class="badge-dot" hidden></span>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <div id="audio-container" class="sr-only" aria-hidden="true"></div>
+
+    <script type="module" src="/js/app.js"></script>
+</body>
+</html>

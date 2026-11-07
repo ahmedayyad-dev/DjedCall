@@ -1,0 +1,28 @@
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build and tooling
+node_modules/
+.wrangler/
+dist/
+
+# Local environment
+.env
+.env.*
+!.env.example
+*.local
+
+# Python / IDE tooling
+.venv/
+__pycache__/
+*.pyc
+
+# Logs
+*.log
