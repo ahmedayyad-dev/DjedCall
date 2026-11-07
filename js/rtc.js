@@ -467,7 +467,7 @@ function ensurePeer(peerId, name) {
             muted: false,
             msgTimes: [],
             route: '',
-            lastSeen: Date.now(),
+            lastSeen: 0,
         };
         state.peers.set(peerId, entry);
         ui.addPeerCard(peerId, entry.name);
@@ -518,10 +518,8 @@ function connectToPeer(peerId, name) {
 
     conn.on('open', () => {
         clearTimeout(guard);
+        entry.lastSeen = Date.now();
         safeSend(conn, { type: 'hello', name: state.myName });
-        audio.waitForPeerConnection(conn, 3000).then((pc) => {
-            if (pc) watchPeerConnection(peerId, pc);
-        });
         if (!state.peers.get(peerId)?.mediaConn) startMediaCall(peerId);
     });
     conn.on('data', (message) => handleData(peerId, message));
@@ -563,10 +561,7 @@ function onIncomingData(conn) {
         }
     }
     entry.dataConn = conn;
-
-    audio.waitForPeerConnection(conn, 3000).then((pc) => {
-        if (pc) watchPeerConnection(conn.peer, pc);
-    });
+    entry.lastSeen = Date.now();
 
     conn.on('data', (message) => handleData(conn.peer, message));
     conn.on('close', () => {
@@ -605,6 +600,8 @@ function onIncomingCall(call) {
     }
     entry.mediaConn = call;
 
+    audio.ensureAudioContext();
+
     try {
         call.answer(audio.currentMic(), { sdpTransform: audio.tuneSdp });
     } catch {
@@ -613,7 +610,7 @@ function onIncomingCall(call) {
 
     call.on('stream', (remote) => attachRemote(call.peer, remote));
     call.on('close', () => detachRemote(call.peer));
-    call.on('error', () => {});
+    call.on('error', (err) => console.warn('Call error:', err));
 
     audio.waitForPeerConnection(call).then((pc) => {
         if (!pc) return;
@@ -629,6 +626,8 @@ function startMediaCall(peerId) {
     if (!entry || entry.mediaConn || !state.peer) return;
     const stream = audio.currentMic();
     if (!stream) return;
+
+    audio.ensureAudioContext();
 
     let call;
     try {
@@ -651,7 +650,7 @@ function startMediaCall(peerId) {
         }
         detachRemote(peerId);
     });
-    call.on('error', () => {});
+    call.on('error', (err) => console.warn('Call error:', err));
 
     audio.waitForPeerConnection(call).then((pc) => {
         if (!pc) return;
@@ -689,7 +688,7 @@ function watchPeerConnection(peerId, pc) {
                 ) {
                     dropPeer(peerId);
                 }
-            }, 3500);
+            }, 15000);
         } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
             clearTimeout(disconnectTimer);
         }
@@ -735,6 +734,8 @@ function attachRemote(peerId, stream) {
         entry.audioEl.remove();
     }
 
+    audio.ensureAudioContext();
+
     const element = document.createElement('audio');
     element.autoplay = true;
     element.playsInline = true;
@@ -742,10 +743,16 @@ function attachRemote(peerId, stream) {
     ui.audioContainer().append(element);
     entry.audioEl = element;
 
-    element.play().catch(() => {
-        const retry = () => element.play().catch(() => {});
-        document.addEventListener('pointerdown', retry, { once: true });
-    });
+    const tryPlay = () => {
+        element.play().catch(() => {
+            const unlock = () => {
+                element.play().catch(() => {});
+            };
+            document.addEventListener('pointerdown', unlock, { once: true });
+            document.addEventListener('touchstart', unlock, { once: true });
+        });
+    };
+    tryPlay();
 
     audio.attachVAD(peerId, stream);
     audio.startVAD();
@@ -820,9 +827,9 @@ function startHeartbeat() {
         for (const [peerId, entry] of state.peers) {
             if (entry.dataConn?.open) {
                 safeSend(entry.dataConn, { type: 'ping' });
-            }
-            if (entry.lastSeen && now - entry.lastSeen > 9000) {
-                dropPeer(peerId);
+                if (entry.lastSeen && now - entry.lastSeen > 20000) {
+                    dropPeer(peerId);
+                }
             }
         }
     }, 3000);

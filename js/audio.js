@@ -199,7 +199,8 @@ export async function applyLowBitrate(pc) {
         const parameters = sender.getParameters();
         if (!parameters.encodings?.length) parameters.encodings = [{}];
         parameters.encodings[0].maxBitrate = MAX_BITRATE;
-        parameters.encodings[0].networkPriority = 'low';
+        parameters.encodings[0].priority = 'high';
+        parameters.encodings[0].networkPriority = 'high';
         await sender.setParameters(parameters);
     } catch {
         /* بعض المتصفحات ترفض تعديل المعاملات */
