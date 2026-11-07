@@ -795,7 +795,7 @@ function watchPeerConnection(peerId, pc) {
                 ) {
                     dropPeer(peerId);
                 }
-            }, 15000);
+            }, 8000);
         } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
             clearTimeout(disconnectTimer);
             trackRoute(peerId, pc);
@@ -1171,6 +1171,7 @@ let networkRecovering = false;
 
 export async function recoverNetworkSession() {
     if (!state.inRoom || networkRecovering) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     networkRecovering = true;
     ui.toast(STR.reconnectingNet, 'info');
 
@@ -1223,6 +1224,12 @@ if (typeof window !== 'undefined') {
         if (state.inRoom) {
             clearTimeout(roamingTimer);
             roamingTimer = setTimeout(recoverNetworkSession, 600);
+        }
+    });
+
+    window.addEventListener('offline', () => {
+        if (state.inRoom) {
+            ui.toast(STR.reconnectingNet, 'info');
         }
     });
 
