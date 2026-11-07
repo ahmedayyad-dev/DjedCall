@@ -31,7 +31,6 @@ export const state = {
     relayConn: null,
     relayMembers: new Map(),
     isRelay: false,
-    relaySlot: 0,
     claiming: false,
 
     roomKey: '',
@@ -203,7 +202,17 @@ export async function join(roomRaw, name) {
         state.peer.on('call', onIncomingCall);
         state.peer.on('disconnected', () => {
             if (!state.inRoom) return;
-            recoverNetworkSession();
+            if (state.peers.size > 0) {
+                try {
+                    state.peer.reconnect();
+                } catch {}
+                return;
+            }
+            try {
+                state.peer.reconnect();
+            } catch {
+                recoverNetworkSession();
+            }
         });
         state.peer.on('error', onPeerError);
 
@@ -281,7 +290,6 @@ export function teardown() {
     state.peer = null;
     state.relayPeer = null;
     state.isRelay = false;
-    state.relaySlot = 0;
     state.claiming = false;
     state.myId = '';
 
@@ -296,37 +304,40 @@ export function teardown() {
     ui.setChatOpen(false);
 }
 
-/* --------------------------- بوابة الاكتشاف المتعددة --------------------------- */
+/* --------------------------- بوابة الاكتشاف الموحدة --------------------------- */
 
-const RELAY_SLOTS = ['', '-b'];
-const getRelayId = (slot = 0) => `${ROOM_PREFIX}${state.roomKey}${RELAY_SLOTS[slot] ?? ''}`;
+const getRelayId = () => `${ROOM_PREFIX}${state.roomKey}`;
 
-async function joinDiscovery(slot = 0) {
+async function joinDiscovery() {
     if (!state.inRoom || !state.peer || state.peer.destroyed) return;
 
     try {
-        const relayId = getRelayId(slot);
+        const relayId = getRelayId();
         const relay = await createPeer(relayId);
         state.relayPeer = relay;
         state.isRelay = true;
-        state.relaySlot = slot;
         relay.on('connection', onRelayConnection);
+        relay.on('disconnected', () => {
+            if (state.inRoom && state.isRelay && state.relayPeer && !state.relayPeer.destroyed) {
+                try {
+                    state.relayPeer.reconnect();
+                } catch {}
+            }
+        });
         relay.on('error', () => {});
-        if (slot === 0) {
-            ui.addSystemMessage(STR.firstInRoom);
-            ui.toast(STR.firstInRoom, 'join');
-        }
+        ui.addSystemMessage(STR.firstInRoom);
+        ui.toast(STR.firstInRoom, 'join');
     } catch (error) {
         if (error?.type === 'unavailable-id') {
             state.isRelay = false;
-            connectToRelay(slot);
+            connectToRelay();
             return;
         }
         if (!state.inRoom) return;
         ui.addSystemMessage(STR.retrying);
         setTimeout(() => {
-            if (state.inRoom) joinDiscovery(slot === 0 ? 1 : 0);
-        }, 1200);
+            if (state.inRoom) joinDiscovery();
+        }, 1000);
     }
 }
 
@@ -340,20 +351,20 @@ function closeRelayConn() {
     state.relayConn = null;
 }
 
-function connectToRelay(slot = 0) {
+function connectToRelay() {
     if (!state.inRoom || !state.peer || state.peer.destroyed) return;
     closeRelayConn();
 
-    const relayId = getRelayId(slot);
+    const relayId = getRelayId();
     let conn;
     try {
         conn = state.peer.connect(relayId, { reliable: true });
     } catch {
-        scheduleRelayClaim(slot === 0 ? 1 : 0);
+        scheduleRelayClaim();
         return;
     }
     if (!conn) {
-        scheduleRelayClaim(slot === 0 ? 1 : 0);
+        scheduleRelayClaim();
         return;
     }
     state.relayConn = conn;
@@ -366,8 +377,8 @@ function connectToRelay(slot = 0) {
         } catch {
             /* أُغلق مسبقاً */
         }
-        scheduleRelayClaim(slot === 0 ? 1 : 0);
-    }, 7000);
+        scheduleRelayClaim();
+    }, 3500);
 
     conn.on('open', () => safeSend(conn, { type: 'hello', name: state.myName }));
     conn.on('data', (message) => {
@@ -376,7 +387,6 @@ function connectToRelay(slot = 0) {
             received = true;
             clearTimeout(failsafe);
             state.isRelay = false;
-            state.relaySlot = slot;
             applyPeerList(message.peers);
             applyHistory(message.history);
         } else if (message.type === 'peer-joined') {
@@ -393,11 +403,12 @@ function connectToRelay(slot = 0) {
     conn.on('close', () => {
         clearTimeout(failsafe);
         if (state.relayConn === conn) state.relayConn = null;
-        if (state.inRoom && !received) scheduleRelayClaim(slot === 0 ? 1 : 0);
+        if (state.inRoom) scheduleRelayClaim();
     });
     conn.on('error', () => {
         clearTimeout(failsafe);
-        if (state.inRoom && !received) scheduleRelayClaim(slot === 0 ? 1 : 0);
+        if (state.relayConn === conn) state.relayConn = null;
+        if (state.inRoom) scheduleRelayClaim();
     });
 }
 
@@ -426,28 +437,34 @@ function applyPeerList(peers) {
     }
 }
 
-function scheduleRelayClaim(slot = 0) {
+function scheduleRelayClaim() {
     if (state.claiming || !state.inRoom || state.relayPeer) return;
     state.claiming = true;
-    const delay = 500 + Math.random() * 800;
+    const delay = 400 + Math.random() * 600;
 
     setTimeout(async () => {
         state.claiming = false;
         if (!state.inRoom || state.relayPeer) return;
         try {
-            const relayId = getRelayId(slot);
+            const relayId = getRelayId();
             const relay = await createPeer(relayId);
             state.relayPeer = relay;
             state.isRelay = true;
-            state.relaySlot = slot;
             relay.on('connection', onRelayConnection);
+            relay.on('disconnected', () => {
+                if (state.inRoom && state.isRelay && state.relayPeer && !state.relayPeer.destroyed) {
+                    try {
+                        state.relayPeer.reconnect();
+                    } catch {}
+                }
+            });
             relay.on('error', () => {});
             ui.addSystemMessage(STR.relayActivated);
         } catch (error) {
             if (error?.type === 'unavailable-id') {
-                connectToRelay(slot);
+                connectToRelay();
             } else if (state.inRoom) {
-                scheduleRelayClaim(slot === 0 ? 1 : 0);
+                scheduleRelayClaim();
             }
         }
     }, delay);
@@ -515,9 +532,6 @@ function onRelayConnection(conn) {
 
     conn.on('close', () => {
         state.relayMembers.delete(conn.peer);
-        for (const member of state.relayMembers.values()) {
-            safeSend(member.conn, { type: 'peer-left', id: conn.peer });
-        }
     });
     conn.on('error', (err) => console.warn('Relay conn error:', err));
 }
@@ -544,13 +558,13 @@ function ensurePeer(peerId, name, muted = false) {
     const rawClean = cleanName(name);
     if (rawClean) {
         for (const [existingId, existing] of state.peers) {
-            if (existingId !== peerId && existing.name === rawClean) {
-                if (
-                    !existing.dataConn?.open &&
-                    (!existing.pc ||
-                        existing.pc.iceConnectionState === 'disconnected' ||
-                        existing.pc.iceConnectionState === 'failed')
-                ) {
+            if (existingId !== peerId && (existing.name === rawClean || existing.name.startsWith(`${rawClean} (`))) {
+                const iceDead = !existing.pc ||
+                    existing.pc.iceConnectionState === 'disconnected' ||
+                    existing.pc.iceConnectionState === 'failed' ||
+                    existing.pc.iceConnectionState === 'closed';
+                const dataDead = !existing.dataConn || !existing.dataConn.open;
+                if (iceDead || dataDead) {
                     dropPeer(existingId, { silent: true });
                 }
             }
@@ -935,7 +949,7 @@ function dropPeer(peerId, { silent = false } = {}) {
     /* إذا أصبح الجهاز وحيداً بعد مغادرة الطرف الآخر، يفحص البوابة فوراً لإعادة الوصل */
     if (state.inRoom && state.peers.size === 0 && !state.isRelay) {
         if (!state.relayConn || !state.relayConn.open) {
-            connectToRelay(state.relaySlot || 0);
+            connectToRelay();
         } else {
             safeSend(state.relayConn, { type: 'hello', name: state.myName });
         }
@@ -959,10 +973,17 @@ function startHeartbeat() {
             return;
         }
 
-        // 1. حارس مقبس التنسيق: إذا انقطع الاتصال بالخادم، يبدأ التعافي فوراً
-        if (!state.peer || state.peer.destroyed || state.peer.disconnected) {
+        // 1. حارس مقبس التنسيق: إذا انقطع الاتصال بالخادم
+        if (!state.peer || state.peer.destroyed) {
             recoverNetworkSession();
             return;
+        }
+        if (state.peer.disconnected) {
+            try {
+                state.peer.reconnect();
+            } catch {
+                if (state.peers.size === 0) recoverNetworkSession();
+            }
         }
 
         // 2. حارس البوابة: إذا كنا وحدنا في الغرفة، نتحقق من اتصال البوابة بهدوء
@@ -970,21 +991,25 @@ function startHeartbeat() {
             if (!state.isRelay) {
                 if (!state.relayConn || !state.relayConn.open) {
                     relayWatchTicks += 1;
-                    if (relayWatchTicks >= 4) {
+                    if (relayWatchTicks >= 3) {
                         relayWatchTicks = 0;
-                        connectToRelay(state.relaySlot || 0);
+                        connectToRelay();
                     }
                 } else {
                     relayWatchTicks = 0;
                     aloneTicks += 1;
-                    if (aloneTicks >= 4) {
+                    if (aloneTicks >= 3) {
                         aloneTicks = 0;
                         safeSend(state.relayConn, { type: 'hello', name: state.myName });
                     }
                 }
             } else {
-                if (!state.relayPeer || state.relayPeer.destroyed || state.relayPeer.disconnected) {
-                    joinDiscovery(state.relaySlot || 0);
+                if (!state.relayPeer || state.relayPeer.destroyed) {
+                    joinDiscovery();
+                } else if (state.relayPeer.disconnected) {
+                    try {
+                        state.relayPeer.reconnect();
+                    } catch {}
                 }
             }
         } else {
@@ -1247,12 +1272,23 @@ export async function recoverNetworkSession() {
         state.peer.on('connection', onIncomingData);
         state.peer.on('call', onIncomingCall);
         state.peer.on('disconnected', () => {
-            if (state.inRoom) recoverNetworkSession();
+            if (!state.inRoom) return;
+            if (state.peers.size > 0) {
+                try {
+                    state.peer.reconnect();
+                } catch {}
+                return;
+            }
+            try {
+                state.peer.reconnect();
+            } catch {
+                recoverNetworkSession();
+            }
         });
         state.peer.on('error', onPeerError);
 
         // 4. إعادة الانضمام للبوابة وطلب قائمة الأعضاء
-        await joinDiscovery(0);
+        await joinDiscovery();
 
         ui.toast(STR.reconnectedNet, 'ok');
     } catch {
