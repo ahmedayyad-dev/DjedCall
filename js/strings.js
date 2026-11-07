@@ -55,4 +55,8 @@ export const STR = {
     bitrateSilent: '0kbps ▪ DTX (سكوت)',
     bitrate: (kbps) => `${kbps}kbps ▪ DTX اقتصادي`,
     bitrateIdle: '16kbps ▪ DTX',
+
+    settingsSaved: 'تم حفظ إعدادات الخوادم بنجاح ✓',
+    settingsReset: 'تمت استعادة إعدادات الخوادم الافتراضية ✓',
+    settingsInvalid: 'برجاء كتابة عنوان خادم صحيح',
 };

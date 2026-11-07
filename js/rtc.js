@@ -8,7 +8,6 @@ import {
     LOCAL_SEND_GAP,
     MAX_PEERS,
     PEER_OPEN_TIMEOUT,
-    PEER_OPTIONS,
     PEER_PREFIX,
     RAW_NAME_MAX,
     RAW_TEXT_MAX,
@@ -17,6 +16,7 @@ import {
     RELAY_LIST_TIMEOUT,
     RELAY_MAX_MEMBERS,
     ROOM_PREFIX,
+    getEffectivePeerOptions,
 } from './config.js';
 import { STR } from './strings.js';
 import { cleanMessage, cleanName, cleanRoomLabel, hasLink, validPeerId } from './guard.js';
@@ -59,7 +59,7 @@ function createPeer(id) {
     return new Promise((resolve, reject) => {
         let peer;
         try {
-            peer = new Peer(id, PEER_OPTIONS);
+            peer = new Peer(id, getEffectivePeerOptions());
         } catch (error) {
             reject(error);
             return;

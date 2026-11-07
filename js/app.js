@@ -1,6 +1,13 @@
 /* نقطة الدخول: ربط الأحداث بالوحدات */
 
-import { STORAGE_KEYS } from './config.js';
+import {
+    DEFAULT_PEER_SERVER,
+    STORAGE_KEYS,
+    getEffectivePeerServer,
+    getSavedServers,
+    resetCustomServers,
+    saveCustomServers,
+} from './config.js';
 import { cleanName } from './guard.js';
 import { STR } from './strings.js';
 import { $, generateRoomCode, readRoute, readStorage, writeStorage } from './utils.js';
@@ -24,6 +31,21 @@ const renameCancelBtn = $('rename-cancel-btn');
 const chatToggleButtons = [$('toggle-chat-header-btn'), $('toggle-chat-footer-btn')];
 const closeChatBtn = $('close-chat-btn');
 const joinRoomBtn = $('join-room-btn');
+
+/* عناصر نافذة إعدادات الخوادم */
+const openSettingsBtn = $('open-settings-btn');
+const closeSettingsBtn = $('close-settings-btn');
+const settingsModal = $('settings-modal');
+const settingsForm = $('settings-form');
+const resetSettingsBtn = $('reset-settings-btn');
+
+const cfgPeerHost = $('cfg-peer-host');
+const cfgPeerPort = $('cfg-peer-port');
+const cfgPeerPath = $('cfg-peer-path');
+const cfgPeerSecure = $('cfg-peer-secure');
+const cfgTurnUrl = $('cfg-turn-url');
+const cfgTurnUser = $('cfg-turn-user');
+const cfgTurnPass = $('cfg-turn-pass');
 
 async function handleJoin(event) {
     event.preventDefault();
@@ -104,6 +126,83 @@ function handleRename(event) {
     ui.toast(STR.nameUpdated, 'ok');
 }
 
+/* ------------------------- نافذة إعدادات الخوادم ------------------------- */
+
+function openSettings() {
+    const saved = getSavedServers();
+    const effectivePeer = getEffectivePeerServer();
+
+    cfgPeerHost.value = saved?.peerServer?.host || effectivePeer.host || '';
+    cfgPeerPort.value = saved?.peerServer?.port || effectivePeer.port || 443;
+    cfgPeerPath.value = saved?.peerServer?.path || effectivePeer.path || '/';
+    cfgPeerSecure.checked = saved?.peerServer ? saved.peerServer.secure !== false : effectivePeer.secure !== false;
+
+    if (saved?.turnServer?.url) {
+        cfgTurnUrl.value = saved.turnServer.url || '';
+        cfgTurnUser.value = saved.turnServer.username || '';
+        cfgTurnPass.value = saved.turnServer.credential || '';
+    } else {
+        cfgTurnUrl.value = '';
+        cfgTurnUser.value = '';
+        cfgTurnPass.value = '';
+    }
+
+    settingsModal.hidden = false;
+    cfgPeerHost.focus();
+}
+
+function closeSettings() {
+    settingsModal.hidden = true;
+}
+
+function handleSaveSettings(event) {
+    event.preventDefault();
+    const host = cfgPeerHost.value.trim();
+    if (!host) {
+        ui.toast(STR.settingsInvalid, 'error');
+        cfgPeerHost.focus();
+        return;
+    }
+
+    const port = Number(cfgPeerPort.value) || 443;
+    const path = cfgPeerPath.value.trim() || '/';
+    const secure = cfgPeerSecure.checked;
+
+    const turnUrl = cfgTurnUrl.value.trim();
+    const turnUser = cfgTurnUser.value.trim();
+    const turnPass = cfgTurnPass.value.trim();
+
+    const config = {
+        peerServer: { host, port, path, secure },
+    };
+
+    if (turnUrl) {
+        config.turnServer = {
+            url: turnUrl,
+            username: turnUser,
+            credential: turnPass,
+        };
+    }
+
+    saveCustomServers(config);
+    closeSettings();
+    ui.toast(STR.settingsSaved, 'ok');
+}
+
+function handleResetSettings() {
+    resetCustomServers();
+    const defPeer = DEFAULT_PEER_SERVER;
+    cfgPeerHost.value = defPeer.host;
+    cfgPeerPort.value = defPeer.port;
+    cfgPeerPath.value = defPeer.path;
+    cfgPeerSecure.checked = defPeer.secure;
+    cfgTurnUrl.value = '';
+    cfgTurnUser.value = '';
+    cfgTurnPass.value = '';
+    closeSettings();
+    ui.toast(STR.settingsReset, 'ok');
+}
+
 function init() {
     rtc.wireAudioHandlers();
 
@@ -131,6 +230,19 @@ function init() {
     ui.onChatSubmit(rtc.sendChat);
     for (const button of chatToggleButtons) button.addEventListener('click', handleChatToggle);
     closeChatBtn.addEventListener('click', () => ui.setChatOpen(false));
+
+    openSettingsBtn?.addEventListener('click', openSettings);
+    closeSettingsBtn?.addEventListener('click', closeSettings);
+    settingsForm?.addEventListener('submit', handleSaveSettings);
+    resetSettingsBtn?.addEventListener('click', handleResetSettings);
+    settingsModal?.addEventListener('click', (event) => {
+        if (event.target === settingsModal) closeSettings();
+    });
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && settingsModal && !settingsModal.hidden) {
+            closeSettings();
+        }
+    });
 
     document.addEventListener('pointerdown', () => audio.ensureAudioContext(), { passive: true });
     window.addEventListener('beforeunload', () => rtc.leave());

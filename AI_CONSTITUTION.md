@@ -3,6 +3,7 @@
 ## Permanent Operating Rules
 - **Document Durable Rules**: Whenever the user states a lasting rule, coding standard, or durable preference, record it here. Keep only rules that affect future development; never store transient notes or conversation history.
 - **Rule Adherence**: Every rule in this file is binding across sessions. Re-read it at the start of a task and verify compliance before committing.
+- **Intended Scope & Philosophy**: The application is designed exclusively for simple, trusted voice communication among friends, family, and collaborative work environments. It is not an open social network or intended for communicating with strangers.
 
 ## Open-Source Safety & Privacy (Absolute Requirement)
 - **Zero Absolute Paths**: Never write home directories, local usernames, drive letters, or machine-specific paths in any git-tracked file. Every reference must be relative to the project root.

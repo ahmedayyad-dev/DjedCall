@@ -3,7 +3,7 @@
 export const ROOM_PREFIX = 'djedcall-r-';
 export const PEER_PREFIX = 'djedcall-m-';
 
-export const ICE_SERVERS = [
+export const DEFAULT_ICE_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:peer.djedcall.ahmedayyad.dev:3478' },
@@ -17,6 +17,8 @@ export const ICE_SERVERS = [
     },
 ];
 
+export const ICE_SERVERS = DEFAULT_ICE_SERVERS;
+
 export const ROOM_WORDS = [
     'nile', 'ankh', 'horus', 'isis', 'osiris', 'djed', 'karnak', 'luxor',
     'giza', 'sphinx', 'papyrus', 'ammit', 'aten', 'sobek', 'min', 'set',
@@ -25,28 +27,112 @@ export const ROOM_WORDS = [
 export const STORAGE_KEYS = {
     name: 'djedcall:name',
     room: 'djedcall:room',
+    servers: 'djedcall:servers',
 };
 
-/* خادم التنسيق الخاص بنا (PeerJS) — نفس النطاق يعمل عبر WSS على المنفذ 443 */
-export const PEER_SERVER = {
+/* خادم التنسيق الافتراضي الخاص بنا (PeerJS) */
+export const DEFAULT_PEER_SERVER = {
     host: 'peer.djedcall.ahmedayyad.dev',
     port: 443,
     secure: true,
     path: '/',
 };
 
-export const PEER_OPTIONS = {
-    ...PEER_SERVER,
-    debug: 0,
-    config: {
-        /* الوسائط تختار المسار المحلي تلقائياً عند توفر نفس الشبكة، أو عبر STUN/TURN لبقية الشبكات */
-        iceServers: ICE_SERVERS,
-        iceTransportPolicy: 'all',
-        iceCandidatePoolSize: 4,
-        bundlePolicy: 'max-bundle',
-        rtcpMuxPolicy: 'require',
-    },
-};
+export const PEER_SERVER = DEFAULT_PEER_SERVER;
+
+/* قراءة واسترجاع إعدادات الخوادم المحفوظة محلياً أو استخدام الافتراضية */
+export function getSavedServers() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEYS.servers);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+        /* تجاهل الأخطاء إن كانت البيانات غير صالحة */
+    }
+    return null;
+}
+
+export function getEffectivePeerServer() {
+    const saved = getSavedServers();
+    if (saved?.peerServer?.host) {
+        return {
+            host: String(saved.peerServer.host).trim(),
+            port: Number(saved.peerServer.port) || 443,
+            secure: saved.peerServer.secure !== false,
+            path: String(saved.peerServer.path || '/').trim() || '/',
+        };
+    }
+    return DEFAULT_PEER_SERVER;
+}
+
+export function getEffectiveIceServers() {
+    const saved = getSavedServers();
+    if (saved?.turnServer?.url) {
+        const turnUrl = String(saved.turnServer.url).trim();
+        const baseTurn = turnUrl.replace(/\?transport=(udp|tcp)/g, '');
+        const stunUrl = turnUrl.startsWith('turn:') ? turnUrl.replace(/^turn:/, 'stun:') : '';
+
+        const ice = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+        ];
+
+        if (stunUrl) {
+            ice.push({ urls: stunUrl.split('?')[0] });
+        }
+
+        const turnEntry = {
+            urls: [
+                baseTurn.includes('?') ? baseTurn : `${baseTurn}?transport=udp`,
+                baseTurn.includes('?') ? baseTurn : `${baseTurn}?transport=tcp`,
+            ],
+        };
+        if (saved.turnServer.username) turnEntry.username = String(saved.turnServer.username).trim();
+        if (saved.turnServer.credential) turnEntry.credential = String(saved.turnServer.credential).trim();
+
+        ice.push(turnEntry);
+        return ice;
+    }
+    return DEFAULT_ICE_SERVERS;
+}
+
+export function getEffectivePeerOptions() {
+    const server = getEffectivePeerServer();
+    const ice = getEffectiveIceServers();
+    return {
+        ...server,
+        debug: 0,
+        config: {
+            iceServers: ice,
+            iceTransportPolicy: 'all',
+            iceCandidatePoolSize: 4,
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require',
+        },
+    };
+}
+
+export function saveCustomServers(config) {
+    try {
+        if (!config || typeof config !== 'object') return false;
+        localStorage.setItem(STORAGE_KEYS.servers, JSON.stringify(config));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export function resetCustomServers() {
+    try {
+        localStorage.removeItem(STORAGE_KEYS.servers);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export const PEER_OPTIONS = getEffectivePeerOptions();
 
 export const AUDIO_CONSTRAINTS = {
     echoCancellation: true,

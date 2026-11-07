@@ -4,6 +4,13 @@
 الواجهة ملفات ثابتة تُنشر على Cloudflare Pages، ويتصل المشاركون ببعضهم مباشرة،
 بينما يُستخدم خادم PeerJS للتنسيق الأولي فقط.
 
+## الغرض ونطاق الاستخدام
+
+صُمم **DjedCall** كأداة صوتية سريعة وخفيفة للتواصل المباشر في الدوائر الموثوقة: **بين الأصدقاء، الأقارب، وفرق العمل**:
+- **ليس للتواصل مع الغرباء**: لا يهدف التطبيق ليكون شبكة عامة أو منصة للتعارف؛ لا توجد غرف عامة، ولا دليل مستخدمين، ولا حسابات شخصية أو أدوار إشرافية.
+- **مجموعات موثوقة فقط**: رمز الغرفة هو وسيلة الوصول الوحيدة؛ شارك الرابط مع من تعرفهم وتثق بهم فقط.
+- **بساطة وخصوصية**: لا تسجيل، ولا تخزين، ولا إعلانات، والمكالمة مشفرة بالكامل وتنتهي تماماً بمجرد مغادرة أطرافها.
+
 ## المزايا
 
 - مكالمات صوتية جماعية بجودة اقتصادية: Opus بنحو 16kbps مع DTX.
@@ -86,21 +93,113 @@ python3 -m http.server 8099
 
 في هذه الحالة لا تعمل روابط الغرف عند إعادة التحميل، لأن الخادم لا يعيد توجيه المسارات إلى `index.html`.
 
-## الإعداد
+## تخصيص الخوادم (من المتصفح مباشرة)
 
-خادم التنسيق معرّف في `js/config.js`:
+يمكن لأي مستخدم أو فرع للمشروع استخدام سيرفراته الخاصة دون تعديل الكود البرمجي:
+1. اضغط على زر **«إعدادات الخوادم»** في واجهة الردهة الرئيسية.
+2. أدخل نطاق خادم التنسيق (PeerJS) وخادم الترحيل (STUN/TURN) وبيانات الاعتماد الخاصة بك.
+3. اضغط **«حفظ وتطبيق»**؛ تُحفظ هذه الإعدادات محلياً في متصفحك وتبقى سارية تلقائياً.
+4. يمكنك العودة للخوادم الافتراضية في أي لحظة بالضغط على زر **«استعادة الافتراضي»**.
 
-```js
-export const PEER_SERVER = {
-    host: 'peer.djedcall.ahmedayyad.dev',
-    port: 443,
-    secure: true,
-    path: '/',
-};
+## تشغيل الخوادم عبر Docker (Self-Hosting)
+
+إذا أردت استضافة بنية تحتية خاصة بك بالكامل، يمكنك تشغيل كل من **خادم التنسيق (PeerJS)** و**خادم الترحيل (Coturn TURN/STUN)** باستخدام Docker.
+
+### 1. تشغيل خادم التنسيق (PeerJS Server)
+
+خادم PeerJS يتولى تنسيق الاتصال الأولي وتبادل معرفات الأجهزة (Signaling) عبر WebSocket:
+
+```sh
+docker run -d \
+  --name peerjs-server \
+  --restart always \
+  -p 9000:9000 \
+  peerjs/peerjs-server \
+  --port 9000 \
+  --path /
 ```
 
-لتغيير الخادم عدّل `PEER_SERVER` فقط. يجب أن يعمل عبر WSS على المنفذ 443.
-حدود المشاركين والرسائل وقواعد التحقق موجودة في `js/config.js` و`js/guard.js`.
+> **نصيحة أمان**: يُفضل وضع خادم PeerJS خلف بروكسي عكسي (مثل Caddy أو Nginx) لتوفير شهادة SSL/TLS ليعمل عبر المنفذ 443 و WSS المشفر.
+
+### 2. تشغيل خادم الترحيل (Coturn STUN/TURN)
+
+خادم Coturn يضمن عبور الصوت والبيانات عند الاتصال عبر شبكات المحمول (4G/5G) وجدران الحماية المقيدة (Symmetric NAT / CGNAT). تم ضبط هذا الأمر بأفضل ممارسات الأمان مع خنق السرعة القصوى لحماية السيرفر من استنزاف الباندويث:
+
+```sh
+docker run -d \
+  --name coturn \
+  --restart always \
+  --net=host \
+  coturn/coturn \
+  -n \
+  --log-file=stdout \
+  --listening-port=3478 \
+  --fingerprint \
+  --lt-cred-mech \
+  --realm=your-domain.com \
+  --user=djedcall:yourpassword \
+  --external-ip=YOUR_SERVER_PUBLIC_IP \
+  --min-port=49152 \
+  --max-port=49250 \
+  --max-bps=8000 \
+  --user-quota=4 \
+  --total-quota=100 \
+  --denied-peer-ip=10.0.0.0-10.255.255.255 \
+  --denied-peer-ip=172.16.0.0-172.31.255.255 \
+  --denied-peer-ip=192.168.0.0-192.168.255.255 \
+  --denied-peer-ip=127.0.0.0-127.255.255.255
+```
+
+> **ملاحظات الإعداد**:
+> - استبدل `YOUR_SERVER_PUBLIC_IP` بعنوان الآي بي العام لسيرفرك.
+> - استبدل `yourpassword` و `your-domain.com` بالبيانات المناسبة لك.
+> - تأكد من فتح المنفذ `3478` (TCP/UDP) ومجال منافذ الصوت `49152:49250` (UDP) في جدار الحماية (Firewall/UFW).
+
+### 3. تشغيل الخادمين معاً عبر Docker Compose
+
+يمكنك إنشاء ملف `docker-compose.yml` وتشغيل المنظومة بأكملها:
+
+```yaml
+version: '3.8'
+
+services:
+  peerjs:
+    image: peerjs/peerjs-server:latest
+    container_name: peerjs-server
+    restart: always
+    ports:
+      - "9000:9000"
+    command: ["--port", "9000", "--path", "/"]
+
+  coturn:
+    image: coturn/coturn:latest
+    container_name: coturn
+    restart: always
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --fingerprint
+      - --lt-cred-mech
+      - --realm=your-domain.com
+      - --user=djedcall:yourpassword
+      - --external-ip=YOUR_SERVER_PUBLIC_IP
+      - --min-port=49152
+      - --max-port=49250
+      - --max-bps=8000
+      - --user-quota=4
+      - --total-quota=100
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+```
+
+شغّل الحاويات بأمر:
+```sh
+docker compose up -d
+```
 
 ## النشر على Cloudflare Pages
 
