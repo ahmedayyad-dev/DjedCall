@@ -6,8 +6,15 @@ export const PEER_PREFIX = 'djedcall-m-';
 export const ICE_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'stun:peer.djedcall.ahmedayyad.dev:3478' },
+    {
+        urls: [
+            'turn:peer.djedcall.ahmedayyad.dev:3478?transport=udp',
+            'turn:peer.djedcall.ahmedayyad.dev:3478?transport=tcp',
+        ],
+        username: 'djedcall',
+        credential: 'djed2026pass',
+    },
 ];
 
 export const ROOM_WORDS = [
@@ -32,7 +39,7 @@ export const PEER_OPTIONS = {
     ...PEER_SERVER,
     debug: 0,
     config: {
-        /* STUN فقط: الوسائط تختار المسار المحلي تلقائياً عند توفر نفس الشبكة */
+        /* الوسائط تختار المسار المحلي تلقائياً عند توفر نفس الشبكة، أو عبر STUN/TURN لبقية الشبكات */
         iceServers: ICE_SERVERS,
         iceTransportPolicy: 'all',
         iceCandidatePoolSize: 4,
