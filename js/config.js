@@ -4,9 +4,8 @@ export const ROOM_PREFIX = 'djedcall-r-';
 export const PEER_PREFIX = 'djedcall-m-';
 
 export const DEFAULT_ICE_SERVERS = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:peer.djedcall.ahmedayyad.dev:3478' },
+    { urls: 'stun:stun.l.google.com:19302' },
     {
         urls: 'turn:peer.djedcall.ahmedayyad.dev:3478?transport=udp',
         username: 'djedcall',
@@ -147,6 +146,7 @@ export const AUDIO_CONSTRAINTS = {
     autoGainControl: true,
     channelCount: 1,
     sampleRate: 48000,
+    latency: 0.01,
 };
 
 export const VAD = {
@@ -157,7 +157,7 @@ export const VAD = {
     meterScale: 220,
 };
 
-export const MAX_BITRATE = 16000;
+export const MAX_BITRATE = 24000;
 export const STATS_INTERVAL = 2000;
 
 export const PEER_OPEN_TIMEOUT = 12000;

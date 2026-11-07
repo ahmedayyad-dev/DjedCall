@@ -244,6 +244,9 @@ function init() {
         }
     });
 
+    window.addEventListener('focus', () => {
+        if (ui.isChatVisible()) ui.clearUnread();
+    });
     document.addEventListener('pointerdown', () => audio.ensureAudioContext(), { passive: true });
     window.addEventListener('beforeunload', () => rtc.leave());
     window.addEventListener('pagehide', () => rtc.leave());

@@ -32,6 +32,9 @@ export const STR = {
     micDenied: 'لازم تسمح بالوصول للمايكروفون عشان تدخل الغرفة',
     micMissing: 'مفيش مايكروفون متاح على الجهاز ده',
     micError: 'تعذر تشغيل المايكروفون',
+    micInterrupted: 'انقطع المايكروفون (مكالمة واردة أو فصلت السماعة)',
+    reconnectingNet: 'انقطعت الشبكة ▪ جاري إعادة الاتصال تلقائياً...',
+    reconnectedNet: 'تمت استعادة الاتصال بالشبكة بنجاح ✓',
     nameInvalid: 'الاسم لازم حروف وأرقام بس بدون رموز',
     nameRequired: 'اكتب اسمك الأول عشان تدخل الغرفة',
     nameUpdated: 'تم تحديث اسمك ✓',
@@ -53,9 +56,9 @@ export const STR = {
 
     chatNotice: (from, text) => `${from}: ${text}`,
 
-    bitrateSilent: '0kbps ▪ DTX (سكوت)',
-    bitrate: (kbps) => `${kbps}kbps ▪ DTX اقتصادي`,
-    bitrateIdle: '16kbps ▪ DTX',
+    bitrateSilent: '0kbps ▪ سكوت',
+    bitrate: (kbps) => `${kbps}kbps ▪ جودة فائقة`,
+    bitrateIdle: '24kbps ▪ فائق السرعة',
 
     settingsSaved: 'تم حفظ إعدادات الخوادم بنجاح ✓',
     settingsReset: 'تمت استعادة إعدادات الخوادم الافتراضية ✓',

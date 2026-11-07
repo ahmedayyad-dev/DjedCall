@@ -9,6 +9,7 @@ let vadTicker = null;
 const sources = new Map();
 let onSpeaking = () => {};
 let onLevel = () => {};
+let onTrackEnded = () => {};
 
 /* ------------------------- سياق الصوت ------------------------- */
 
@@ -16,10 +17,22 @@ export function ensureAudioContext() {
     if (!audioContext) {
         const Ctor = window.AudioContext || window.webkitAudioContext;
         if (!Ctor) return null;
-        audioContext = new Ctor();
+        try {
+            audioContext = new Ctor({ latencyHint: 'interactive' });
+        } catch {
+            audioContext = new Ctor();
+        }
     }
     if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
     return audioContext;
+}
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && audioContext?.state === 'suspended') {
+            audioContext.resume().catch(() => {});
+        }
+    });
 }
 
 export function chime(kind = 'join') {
@@ -64,9 +77,18 @@ export async function acquireMic() {
         audio: AUDIO_CONSTRAINTS,
         video: false,
     });
+    micStream.getAudioTracks().forEach((track) => {
+        track.addEventListener('ended', () => {
+            onTrackEnded();
+        });
+    });
     attachVAD('local', micStream);
     startVAD();
     return micStream;
+}
+
+export function setTrackEndedHandler(handler) {
+    onTrackEnded = handler;
 }
 
 export function setMicEnabled(enabled) {
@@ -177,7 +199,14 @@ export function stopVAD() {
 
 /* ------------------- ضبط البتريت عبر SDP / Sender ------------------- */
 
-const OPUS_PARAMS = ['usedtx=1', 'stereo=0', `maxaveragebitrate=${MAX_BITRATE}`, 'cbr=0'];
+const OPUS_PARAMS = [
+    'usedtx=0',
+    'stereo=0',
+    `maxaveragebitrate=${MAX_BITRATE}`,
+    'cbr=0',
+    'minptime=10',
+    'maxptime=20',
+];
 
 export function tuneSdp(sdp) {
     if (typeof sdp !== 'string' || !sdp) return sdp;
@@ -185,8 +214,17 @@ export function tuneSdp(sdp) {
         .split('\r\n')
         .map((line) => {
             if (!line.startsWith('a=fmtp:') || !/minptime|useinbandfec|opus/i.test(line)) return line;
-            const missing = OPUS_PARAMS.filter((param) => !line.includes(param.split('=')[0]));
-            return missing.length ? `${line};${missing.join(';')}` : line;
+            let updated = line;
+            for (const param of OPUS_PARAMS) {
+                const key = param.split('=')[0];
+                const regex = new RegExp(`;?${key}=[^;]+`, 'i');
+                if (regex.test(updated)) {
+                    updated = updated.replace(regex, `;${param}`);
+                } else {
+                    updated = `${updated};${param}`;
+                }
+            }
+            return updated.replace(/;{2,}/g, ';');
         })
         .join('\r\n');
 }

@@ -109,6 +109,40 @@ const micErrorMessage = (error) => {
 
 const connections = () => [...state.peers.values()].map((entry) => entry.pc).filter(Boolean);
 
+let wakeLock = null;
+
+async function requestWakeLock() {
+    if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && !wakeLock) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => {
+                wakeLock = null;
+            });
+        } catch {
+            wakeLock = null;
+        }
+    }
+}
+
+function releaseWakeLock() {
+    if (wakeLock) {
+        try {
+            wakeLock.release();
+        } catch {
+            /* تجاهل خطأ تحرير القفل */
+        }
+        wakeLock = null;
+    }
+}
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+        if (state.inRoom && document.visibilityState === 'visible') {
+            requestWakeLock();
+        }
+    });
+}
+
 export async function join(roomRaw, name) {
     if (state.inRoom || state.joining) return;
     state.joining = true;
@@ -152,6 +186,7 @@ export async function join(roomRaw, name) {
         audio.setMicEnabled(true);
         audio.startVAD();
         audio.startBitrateStats(connections, onBitrate);
+        requestWakeLock();
 
         try {
             state.peer = await createPeer(`${PEER_PREFIX}${roomKey}-${randomId(8)}`);
@@ -218,6 +253,7 @@ export function leave() {
 export function teardown() {
     state.inRoom = false;
 
+    releaseWakeLock();
     stopHeartbeat();
     audio.stopBitrateStats();
     audio.stopVAD();
@@ -363,7 +399,7 @@ function applyPeerList(peers) {
         if (!peer || typeof peer !== 'object') continue;
         if (!peerInRoom(peer.id) || peer.id === state.myId) continue;
         const rawName = typeof peer.name === 'string' && peer.name.length <= RAW_NAME_MAX ? peer.name : '';
-        connectToPeer(peer.id, cleanName(rawName));
+        connectToPeer(peer.id, cleanName(rawName), Boolean(peer.muted));
     }
 }
 
@@ -390,8 +426,10 @@ function scheduleRelayClaim() {
 }
 
 function roster() {
-    const list = [{ id: state.myId, name: state.myName }];
-    for (const peer of state.peers.values()) list.push({ id: peer.id, name: peer.name });
+    const list = [{ id: state.myId, name: state.myName, muted: state.muted }];
+    for (const peer of state.peers.values()) {
+        list.push({ id: peer.id, name: peer.name, muted: peer.muted });
+    }
     const seen = new Set();
     return list
         .filter((item) => item.id && !seen.has(item.id) && seen.add(item.id))
@@ -423,7 +461,14 @@ function onRelayConnection(conn) {
         const name = cleanName(message.name) || STR.defaultName;
         const isExisting = state.relayMembers.has(conn.peer);
         state.relayMembers.set(conn.peer, { name, conn });
-        if (isExisting) return;
+        if (isExisting) {
+            safeSend(conn, {
+                type: 'peer-list',
+                peers: roster(),
+                history: state.chatHistory.slice(-40),
+            });
+            return;
+        }
 
         safeSend(conn, {
             type: 'peer-list',
@@ -451,38 +496,56 @@ function onRelayConnection(conn) {
 
 /* --------------------------- الشبكة المتكاملة --------------------------- */
 
-function ensurePeer(peerId, name) {
+function disambiguateName(baseName, peerId) {
+    const raw = cleanName(baseName) || STR.defaultName;
+    if (raw === state.myName) {
+        return `${raw} (2)`;
+    }
+    let count = 0;
+    for (const [id, peer] of state.peers) {
+        if (id !== peerId && (peer.name === raw || peer.name.startsWith(`${raw} (`))) {
+            count += 1;
+        }
+    }
+    return count > 0 ? `${raw} (${count + 1})` : raw;
+}
+
+function ensurePeer(peerId, name, muted = false) {
     if (!peerInRoom(peerId)) return null;
 
     let entry = state.peers.get(peerId);
     if (!entry) {
         if (state.peers.size >= MAX_PEERS) return null;
+        const resolvedName = disambiguateName(name, peerId);
         entry = {
             id: peerId,
-            name: cleanName(name) || STR.defaultName,
+            name: resolvedName,
             dataConn: null,
             mediaConn: null,
             pc: null,
             audioEl: null,
-            muted: false,
+            muted: Boolean(muted),
             msgTimes: [],
             route: '',
             lastSeen: 0,
         };
         state.peers.set(peerId, entry);
         ui.addPeerCard(peerId, entry.name);
+        if (entry.muted) {
+            ui.updatePeerCard(entry);
+        }
         ui.updatePeersCount(state.peers.size + 1);
     } else {
         const safeName = cleanName(name);
         if (safeName && entry.name !== safeName) {
-            entry.name = safeName;
+            entry.name = disambiguateName(safeName, peerId);
             ui.updatePeerCard(entry);
         }
     }
     return entry;
 }
 
-function connectToPeer(peerId, name) {
+function connectToPeer(peerId, name, muted = false) {
     if (!peerId || peerId === state.myId || !state.peer || !peerInRoom(peerId)) return;
 
     const existing = state.peers.get(peerId);
@@ -494,7 +557,7 @@ function connectToPeer(peerId, name) {
         if (existing.dataConn) return;
     }
 
-    const entry = ensurePeer(peerId, name);
+    const entry = ensurePeer(peerId, name, muted);
     if (!entry) return;
 
     let conn;
@@ -511,6 +574,11 @@ function connectToPeer(peerId, name) {
 
     entry.dataConn = conn;
 
+    /* إطلاق اتصال الصوت بالتوازي مع قناة البيانات فوراً لتسريع الربط */
+    if (!entry.mediaConn) {
+        startMediaCall(peerId);
+    }
+
     const guard = setTimeout(() => {
         const current = state.peers.get(peerId);
         if (current && !current.dataConn?.open) dropPeer(peerId, { silent: true });
@@ -519,7 +587,7 @@ function connectToPeer(peerId, name) {
     conn.on('open', () => {
         clearTimeout(guard);
         entry.lastSeen = Date.now();
-        safeSend(conn, { type: 'hello', name: state.myName });
+        safeSend(conn, { type: 'hello', name: state.myName, muted: state.muted });
         if (!state.peers.get(peerId)?.mediaConn) startMediaCall(peerId);
     });
     conn.on('data', (message) => handleData(peerId, message));
@@ -681,6 +749,11 @@ function watchPeerConnection(peerId, pc) {
         } else if (pc.iceConnectionState === 'disconnected') {
             ui.setPeerRoute(peerId, 'connecting');
             clearTimeout(disconnectTimer);
+            try {
+                pc.restartIce?.();
+            } catch {
+                /* بعض المتصفحات لا تدعم restartIce مباشرة */
+            }
             disconnectTimer = setTimeout(() => {
                 const current = state.peers.get(peerId);
                 if (
@@ -817,9 +890,11 @@ function dropPeer(peerId, { silent = false } = {}) {
 /* --------------------------- الرسائل والنبض الدوري --------------------------- */
 
 let heartbeatTimer = null;
+let aloneTicks = 0;
 
 function startHeartbeat() {
     stopHeartbeat();
+    aloneTicks = 0;
     heartbeatTimer = setInterval(() => {
         if (!state.inRoom) {
             stopHeartbeat();
@@ -833,6 +908,21 @@ function startHeartbeat() {
                     dropPeer(peerId);
                 }
             }
+        }
+
+        /* إذا وجد الجهاز نفسه وحيداً في الغرفة، يتحقق دورياً من البوابة لإعادة وصل الأطراف */
+        if (state.peers.size === 0 && !state.isRelay) {
+            aloneTicks += 1;
+            if (aloneTicks >= 4) {
+                aloneTicks = 0;
+                if (!state.relayConn || !state.relayConn.open) {
+                    connectToRelay();
+                } else {
+                    safeSend(state.relayConn, { type: 'hello', name: state.myName });
+                }
+            }
+        } else {
+            aloneTicks = 0;
         }
     }, 3000);
 }
@@ -870,7 +960,11 @@ function handleData(peerId, message) {
             if (typeof message.name !== 'string' || message.name.length > RAW_NAME_MAX) return;
             const name = cleanName(message.name);
             if (name && entry.name !== name) {
-                entry.name = name;
+                entry.name = disambiguateName(name, peerId);
+                ui.updatePeerCard(entry);
+            }
+            if (typeof message.muted === 'boolean' && entry.muted !== message.muted) {
+                entry.muted = message.muted;
                 ui.updatePeerCard(entry);
             }
             return;
@@ -993,6 +1087,15 @@ export async function shareLink() {
     if (!state.inRoom) return;
     const url = `${location.origin}/${encodeURIComponent(state.roomLabel)}`;
 
+    if (typeof navigator.share === 'function') {
+        try {
+            await navigator.share({ title: STR.shareTitle, text: STR.shareText, url });
+            return;
+        } catch (error) {
+            if (error?.name === 'AbortError') return;
+        }
+    }
+
     try {
         if (navigator.clipboard?.writeText) {
             await navigator.clipboard.writeText(url);
@@ -1008,15 +1111,6 @@ export async function shareLink() {
         return;
     }
 
-    if (navigator.share) {
-        try {
-            await navigator.share({ title: STR.shareTitle, text: STR.shareText, url });
-            return;
-        } catch (error) {
-            if (error?.name === 'AbortError') return;
-        }
-    }
-
     window.prompt(STR.copyPrompt, url);
     ui.toast(STR.copyFail, 'error');
 }
@@ -1027,4 +1121,99 @@ export function wireAudioHandlers() {
         ui.setSpeaking(id, speaking);
     });
     audio.setLevelHandler(ui.updateMicMeter);
+    audio.setTrackEndedHandler(() => {
+        if (!state.inRoom) return;
+        ui.toast(STR.micInterrupted, 'error');
+        state.muted = true;
+        ui.updateMicButton(true);
+        ui.setLocalMuted(true);
+        broadcast({ type: 'state', muted: true, name: state.myName });
+    });
+}
+
+/* --------------------------- محرك التجوال والتعافي من تبديل الشبكة --------------------------- */
+
+let roamingTimer = null;
+let networkRecovering = false;
+
+export async function recoverNetworkSession() {
+    if (!state.inRoom || networkRecovering) return;
+    networkRecovering = true;
+    ui.toast(STR.reconnectingNet, 'info');
+
+    try {
+        if (!state.peer || state.peer.destroyed || state.peer.disconnected) {
+            try {
+                if (state.peer && !state.peer.destroyed) {
+                    state.peer.reconnect();
+                } else {
+                    state.peer = await createPeer(`${PEER_PREFIX}${state.roomKey}-${randomId(8)}`);
+                    state.myId = state.peer.id;
+                    state.peer.on('connection', onIncomingData);
+                    state.peer.on('call', onIncomingCall);
+                    state.peer.on('disconnected', () => {
+                        if (state.inRoom) {
+                            try {
+                                state.peer.reconnect();
+                            } catch {
+                                /* غير متاح */
+                            }
+                        }
+                    });
+                    state.peer.on('error', onPeerError);
+                }
+            } catch {
+                /* إعادة تهيئة الند */
+            }
+        }
+
+        for (const entry of state.peers.values()) {
+            if (entry.pc && entry.pc.connectionState !== 'closed') {
+                try {
+                    entry.pc.restartIce?.();
+                } catch {
+                    /* تجاهل عدم دعم restartIce */
+                }
+            }
+        }
+
+        if (state.isRelay) {
+            if (!state.relayPeer || state.relayPeer.destroyed || state.relayPeer.disconnected) {
+                try {
+                    if (state.relayPeer && !state.relayPeer.destroyed) {
+                        state.relayPeer.reconnect();
+                    } else {
+                        await joinDiscovery();
+                    }
+                } catch {
+                    /* استعادة البوابة */
+                }
+            }
+        } else {
+            closeRelayConn();
+            connectToRelay();
+        }
+
+        ui.toast(STR.reconnectedNet, 'ok');
+    } finally {
+        networkRecovering = false;
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => {
+        if (state.inRoom) {
+            clearTimeout(roamingTimer);
+            roamingTimer = setTimeout(recoverNetworkSession, 600);
+        }
+    });
+
+    if (navigator.connection) {
+        navigator.connection.addEventListener('change', () => {
+            if (state.inRoom) {
+                clearTimeout(roamingTimer);
+                roamingTimer = setTimeout(recoverNetworkSession, 1200);
+            }
+        });
+    }
 }
