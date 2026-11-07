@@ -31,6 +31,7 @@ export const state = {
     relayConn: null,
     relayMembers: new Map(),
     isRelay: false,
+    relaySlot: 0,
     claiming: false,
 
     roomKey: '',
@@ -202,11 +203,7 @@ export async function join(roomRaw, name) {
         state.peer.on('call', onIncomingCall);
         state.peer.on('disconnected', () => {
             if (!state.inRoom) return;
-            try {
-                state.peer.reconnect();
-            } catch {
-                /* إعادة الاتصال غير متاحة */
-            }
+            recoverNetworkSession();
         });
         state.peer.on('error', onPeerError);
 
@@ -277,6 +274,7 @@ export function teardown() {
     state.peer = null;
     state.relayPeer = null;
     state.isRelay = false;
+    state.relaySlot = 0;
     state.claiming = false;
     state.myId = '';
 
@@ -291,28 +289,37 @@ export function teardown() {
     ui.setChatOpen(false);
 }
 
-/* --------------------------- بوابة الاكتشاف --------------------------- */
+/* --------------------------- بوابة الاكتشاف المتعددة --------------------------- */
 
-async function joinDiscovery() {
+const RELAY_SLOTS = ['', '-b'];
+const getRelayId = (slot = 0) => `${ROOM_PREFIX}${state.roomKey}${RELAY_SLOTS[slot] ?? ''}`;
+
+async function joinDiscovery(slot = 0) {
+    if (!state.inRoom || !state.peer || state.peer.destroyed) return;
+
     try {
-        const relay = await createPeer(ROOM_PREFIX + state.roomKey);
+        const relayId = getRelayId(slot);
+        const relay = await createPeer(relayId);
         state.relayPeer = relay;
         state.isRelay = true;
+        state.relaySlot = slot;
         relay.on('connection', onRelayConnection);
         relay.on('error', () => {});
-        ui.addSystemMessage(STR.firstInRoom);
-        ui.toast(STR.firstInRoom, 'join');
+        if (slot === 0) {
+            ui.addSystemMessage(STR.firstInRoom);
+            ui.toast(STR.firstInRoom, 'join');
+        }
     } catch (error) {
         if (error?.type === 'unavailable-id') {
             state.isRelay = false;
-            connectToRelay();
+            connectToRelay(slot);
             return;
         }
         if (!state.inRoom) return;
         ui.addSystemMessage(STR.retrying);
         setTimeout(() => {
-            if (state.inRoom) joinDiscovery();
-        }, 2000);
+            if (state.inRoom) joinDiscovery(slot === 0 ? 1 : 0);
+        }, 1200);
     }
 }
 
@@ -326,19 +333,20 @@ function closeRelayConn() {
     state.relayConn = null;
 }
 
-function connectToRelay() {
-    if (!state.inRoom || !state.peer) return;
+function connectToRelay(slot = 0) {
+    if (!state.inRoom || !state.peer || state.peer.destroyed) return;
     closeRelayConn();
 
+    const relayId = getRelayId(slot);
     let conn;
     try {
-        conn = state.peer.connect(ROOM_PREFIX + state.roomKey, { reliable: true });
+        conn = state.peer.connect(relayId, { reliable: true });
     } catch {
-        scheduleRelayClaim();
+        scheduleRelayClaim(slot === 0 ? 1 : 0);
         return;
     }
     if (!conn) {
-        scheduleRelayClaim();
+        scheduleRelayClaim(slot === 0 ? 1 : 0);
         return;
     }
     state.relayConn = conn;
@@ -351,8 +359,8 @@ function connectToRelay() {
         } catch {
             /* أُغلق مسبقاً */
         }
-        scheduleRelayClaim();
-    }, RELAY_LIST_TIMEOUT);
+        scheduleRelayClaim(slot === 0 ? 1 : 0);
+    }, 2500);
 
     conn.on('open', () => safeSend(conn, { type: 'hello', name: state.myName }));
     conn.on('data', (message) => {
@@ -361,6 +369,7 @@ function connectToRelay() {
             received = true;
             clearTimeout(failsafe);
             state.isRelay = false;
+            state.relaySlot = slot;
             applyPeerList(message.peers);
             applyHistory(message.history);
         } else if (message.type === 'peer-joined') {
@@ -373,9 +382,12 @@ function connectToRelay() {
     conn.on('close', () => {
         clearTimeout(failsafe);
         if (state.relayConn === conn) state.relayConn = null;
-        if (state.inRoom) scheduleRelayClaim();
+        if (state.inRoom && !received) scheduleRelayClaim(slot === 0 ? 1 : 0);
     });
-    conn.on('error', () => {});
+    conn.on('error', () => {
+        clearTimeout(failsafe);
+        if (state.inRoom && !received) scheduleRelayClaim(slot === 0 ? 1 : 0);
+    });
 }
 
 function applyHistory(messages) {
@@ -403,24 +415,29 @@ function applyPeerList(peers) {
     }
 }
 
-function scheduleRelayClaim() {
+function scheduleRelayClaim(slot = 0) {
     if (state.claiming || !state.inRoom || state.relayPeer) return;
     state.claiming = true;
-    const delay = RELAY_CLAIM_MIN + Math.random() * RELAY_CLAIM_JITTER;
+    const delay = 500 + Math.random() * 800;
 
     setTimeout(async () => {
         state.claiming = false;
         if (!state.inRoom || state.relayPeer) return;
         try {
-            const relay = await createPeer(ROOM_PREFIX + state.roomKey);
+            const relayId = getRelayId(slot);
+            const relay = await createPeer(relayId);
             state.relayPeer = relay;
             state.isRelay = true;
+            state.relaySlot = slot;
             relay.on('connection', onRelayConnection);
             relay.on('error', () => {});
             ui.addSystemMessage(STR.relayActivated);
         } catch (error) {
-            if (error?.type === 'unavailable-id') connectToRelay();
-            else if (state.inRoom) scheduleRelayClaim();
+            if (error?.type === 'unavailable-id') {
+                connectToRelay(slot);
+            } else if (state.inRoom) {
+                scheduleRelayClaim(slot === 0 ? 1 : 0);
+            }
         }
     }, delay);
 }
@@ -512,6 +529,22 @@ function disambiguateName(baseName, peerId) {
 
 function ensurePeer(peerId, name, muted = false) {
     if (!peerInRoom(peerId)) return null;
+
+    const rawClean = cleanName(name);
+    if (rawClean) {
+        for (const [existingId, existing] of state.peers) {
+            if (existingId !== peerId && existing.name === rawClean) {
+                if (
+                    !existing.dataConn?.open &&
+                    (!existing.pc ||
+                        existing.pc.iceConnectionState === 'disconnected' ||
+                        existing.pc.iceConnectionState === 'failed')
+                ) {
+                    dropPeer(existingId, { silent: true });
+                }
+            }
+        }
+    }
 
     let entry = state.peers.get(peerId);
     if (!entry) {
@@ -916,7 +949,7 @@ function startHeartbeat() {
             if (aloneTicks >= 4) {
                 aloneTicks = 0;
                 if (!state.relayConn || !state.relayConn.open) {
-                    connectToRelay();
+                    connectToRelay(state.relaySlot || 0);
                 } else {
                     safeSend(state.relayConn, { type: 'hello', name: state.myName });
                 }
@@ -1142,59 +1175,44 @@ export async function recoverNetworkSession() {
     ui.toast(STR.reconnectingNet, 'info');
 
     try {
-        if (!state.peer || state.peer.destroyed || state.peer.disconnected) {
-            try {
-                if (state.peer && !state.peer.destroyed) {
-                    state.peer.reconnect();
-                } else {
-                    state.peer = await createPeer(`${PEER_PREFIX}${state.roomKey}-${randomId(8)}`);
-                    state.myId = state.peer.id;
-                    state.peer.on('connection', onIncomingData);
-                    state.peer.on('call', onIncomingCall);
-                    state.peer.on('disconnected', () => {
-                        if (state.inRoom) {
-                            try {
-                                state.peer.reconnect();
-                            } catch {
-                                /* غير متاح */
-                            }
-                        }
-                    });
-                    state.peer.on('error', onPeerError);
-                }
-            } catch {
-                /* إعادة تهيئة الند */
-            }
-        }
+        // 1. هدم المقابس القديمة العالقة بهدوء
+        try {
+            state.peer?.destroy();
+        } catch { }
+        try {
+            state.relayPeer?.destroy();
+        } catch { }
+        closeRelayConn();
 
-        for (const entry of state.peers.values()) {
-            if (entry.pc && entry.pc.connectionState !== 'closed') {
-                try {
-                    entry.pc.restartIce?.();
-                } catch {
-                    /* تجاهل عدم دعم restartIce */
-                }
-            }
-        }
+        state.peer = null;
+        state.relayPeer = null;
+        state.isRelay = false;
 
-        if (state.isRelay) {
-            if (!state.relayPeer || state.relayPeer.destroyed || state.relayPeer.disconnected) {
-                try {
-                    if (state.relayPeer && !state.relayPeer.destroyed) {
-                        state.relayPeer.reconnect();
-                    } else {
-                        await joinDiscovery();
-                    }
-                } catch {
-                    /* استعادة البوابة */
-                }
-            }
-        } else {
-            closeRelayConn();
-            connectToRelay();
+        // 2. تنظيف اتصالات الأقران القديمة التي ماتت مع واجهة الشبكة السابقة
+        for (const peerId of [...state.peers.keys()]) {
+            dropPeer(peerId, { silent: true });
         }
+        state.peers.clear();
+
+        // 3. إنشاء ند جديد بهوية نظيفة غير محجوزة على الخادم
+        const newPeerId = `${PEER_PREFIX}${state.roomKey}-${randomId(8)}`;
+        state.peer = await createPeer(newPeerId);
+        state.myId = state.peer.id;
+        state.peer.on('connection', onIncomingData);
+        state.peer.on('call', onIncomingCall);
+        state.peer.on('disconnected', () => {
+            if (state.inRoom) recoverNetworkSession();
+        });
+        state.peer.on('error', onPeerError);
+
+        // 4. إعادة الانضمام للبوابة وطلب قائمة الأعضاء
+        await joinDiscovery(0);
 
         ui.toast(STR.reconnectedNet, 'ok');
+    } catch {
+        setTimeout(() => {
+            if (state.inRoom) recoverNetworkSession();
+        }, 1500);
     } finally {
         networkRecovering = false;
     }
