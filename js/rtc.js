@@ -176,6 +176,7 @@ export async function join(roomRaw, name) {
         state.peer.on('error', onPeerError);
 
         await joinDiscovery();
+        startHeartbeat();
     } finally {
         state.joining = false;
     }
@@ -192,7 +193,12 @@ function onPeerError(error) {
 export function leave() {
     if (!state.inRoom) return;
 
+    stopHeartbeat();
     broadcast({ type: 'bye', id: state.myId });
+
+    if (state.relayConn) {
+        safeSend(state.relayConn, { type: 'bye', id: state.myId });
+    }
 
     if (state.isRelay) {
         for (const member of state.relayMembers.values()) {
@@ -212,6 +218,7 @@ export function leave() {
 export function teardown() {
     state.inRoom = false;
 
+    stopHeartbeat();
     audio.stopBitrateStats();
     audio.stopVAD();
     for (const peerId of [...state.peers.keys()]) dropPeer(peerId, { silent: true });
@@ -402,7 +409,16 @@ function onRelayConnection(conn) {
     }
 
     conn.on('data', (message) => {
-        if (!message || typeof message !== 'object' || message.type !== 'hello') return;
+        if (!message || typeof message !== 'object') return;
+        if (message.type === 'bye') {
+            state.relayMembers.delete(conn.peer);
+            dropPeer(conn.peer);
+            for (const member of state.relayMembers.values()) {
+                safeSend(member.conn, { type: 'peer-left', id: conn.peer });
+            }
+            return;
+        }
+        if (message.type !== 'hello') return;
         if (typeof message.name === 'string' && message.name.length > RAW_NAME_MAX) return;
         const name = cleanName(message.name) || STR.defaultName;
         const isExisting = state.relayMembers.has(conn.peer);
@@ -430,7 +446,7 @@ function onRelayConnection(conn) {
             safeSend(member.conn, { type: 'peer-left', id: conn.peer });
         }
     });
-    conn.on('error', () => {});
+    conn.on('error', (err) => console.warn('Relay conn error:', err));
 }
 
 /* --------------------------- الشبكة المتكاملة --------------------------- */
@@ -451,6 +467,7 @@ function ensurePeer(peerId, name) {
             muted: false,
             msgTimes: [],
             route: '',
+            lastSeen: Date.now(),
         };
         state.peers.set(peerId, entry);
         ui.addPeerCard(peerId, entry.name);
@@ -502,6 +519,9 @@ function connectToPeer(peerId, name) {
     conn.on('open', () => {
         clearTimeout(guard);
         safeSend(conn, { type: 'hello', name: state.myName });
+        audio.waitForPeerConnection(conn, 3000).then((pc) => {
+            if (pc) watchPeerConnection(peerId, pc);
+        });
         if (!state.peers.get(peerId)?.mediaConn) startMediaCall(peerId);
     });
     conn.on('data', (message) => handleData(peerId, message));
@@ -510,7 +530,10 @@ function connectToPeer(peerId, name) {
         const current = state.peers.get(peerId);
         if (current?.dataConn === conn) dropPeer(peerId);
     });
-    conn.on('error', () => clearTimeout(guard));
+    conn.on('error', (err) => {
+        clearTimeout(guard);
+        console.warn('Peer conn error:', err);
+    });
 }
 
 function onIncomingData(conn) {
@@ -541,12 +564,16 @@ function onIncomingData(conn) {
     }
     entry.dataConn = conn;
 
+    audio.waitForPeerConnection(conn, 3000).then((pc) => {
+        if (pc) watchPeerConnection(conn.peer, pc);
+    });
+
     conn.on('data', (message) => handleData(conn.peer, message));
     conn.on('close', () => {
         const current = state.peers.get(conn.peer);
         if (current?.dataConn === conn) dropPeer(conn.peer);
     });
-    conn.on('error', () => {});
+    conn.on('error', (err) => console.warn('Incoming data conn error:', err));
 }
 
 function onIncomingCall(call) {
@@ -657,7 +684,7 @@ function watchPeerConnection(peerId, pc) {
             disconnectTimer = setTimeout(() => {
                 const current = state.peers.get(peerId);
                 if (
-                    current?.pc === pc &&
+                    current &&
                     (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')
                 ) {
                     dropPeer(peerId);
@@ -743,6 +770,13 @@ function dropPeer(peerId, { silent = false } = {}) {
     const entry = state.peers.get(peerId);
     if (!entry) return;
 
+    if (state.isRelay && state.relayMembers.has(peerId)) {
+        state.relayMembers.delete(peerId);
+        for (const member of state.relayMembers.values()) {
+            safeSend(member.conn, { type: 'peer-left', id: peerId });
+        }
+    }
+
     try {
         entry.dataConn?.close();
     } catch {
@@ -758,6 +792,7 @@ function dropPeer(peerId, { silent = false } = {}) {
         entry.audioEl.pause();
         entry.audioEl.srcObject = null;
         entry.audioEl.remove();
+        entry.audioEl = null;
     }
 
     audio.detachVAD(peerId);
@@ -770,7 +805,35 @@ function dropPeer(peerId, { silent = false } = {}) {
     audio.chime('leave');
 }
 
-/* --------------------------- الرسائل --------------------------- */
+/* --------------------------- الرسائل والنبض الدوري --------------------------- */
+
+let heartbeatTimer = null;
+
+function startHeartbeat() {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => {
+        if (!state.inRoom) {
+            stopHeartbeat();
+            return;
+        }
+        const now = Date.now();
+        for (const [peerId, entry] of state.peers) {
+            if (entry.dataConn?.open) {
+                safeSend(entry.dataConn, { type: 'ping' });
+            }
+            if (entry.lastSeen && now - entry.lastSeen > 9000) {
+                dropPeer(peerId);
+            }
+        }
+    }, 3000);
+}
+
+function stopHeartbeat() {
+    if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+    }
+}
 
 function pushHistory(item) {
     state.chatHistory.push(item);
@@ -782,6 +845,17 @@ function handleData(peerId, message) {
         if (!message || typeof message !== 'object') return;
         const entry = state.peers.get(peerId);
         if (!entry) return;
+
+        entry.lastSeen = Date.now();
+
+        if (message.type === 'ping') {
+            safeSend(entry.dataConn, { type: 'pong' });
+            return;
+        }
+
+        if (message.type === 'pong') {
+            return;
+        }
 
         if (message.type === 'hello') {
             if (typeof message.name !== 'string' || message.name.length > RAW_NAME_MAX) return;

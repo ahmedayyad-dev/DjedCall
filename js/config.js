@@ -8,10 +8,12 @@ export const DEFAULT_ICE_SERVERS = [
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:peer.djedcall.ahmedayyad.dev:3478' },
     {
-        urls: [
-            'turn:peer.djedcall.ahmedayyad.dev:3478?transport=udp',
-            'turn:peer.djedcall.ahmedayyad.dev:3478?transport=tcp',
-        ],
+        urls: 'turn:peer.djedcall.ahmedayyad.dev:3478?transport=udp',
+        username: 'djedcall',
+        credential: 'djed2026pass',
+    },
+    {
+        urls: 'turn:peer.djedcall.ahmedayyad.dev:3478?transport=tcp',
         username: 'djedcall',
         credential: 'djed2026pass',
     },
@@ -82,16 +84,21 @@ export function getEffectiveIceServers() {
             ice.push({ urls: stunUrl.split('?')[0] });
         }
 
-        const turnEntry = {
-            urls: [
-                baseTurn.includes('?') ? baseTurn : `${baseTurn}?transport=udp`,
-                baseTurn.includes('?') ? baseTurn : `${baseTurn}?transport=tcp`,
-            ],
-        };
-        if (saved.turnServer.username) turnEntry.username = String(saved.turnServer.username).trim();
-        if (saved.turnServer.credential) turnEntry.credential = String(saved.turnServer.credential).trim();
+        const username = saved.turnServer.username ? String(saved.turnServer.username).trim() : undefined;
+        const credential = saved.turnServer.credential ? String(saved.turnServer.credential).trim() : undefined;
 
-        ice.push(turnEntry);
+        const turnUdp = { urls: `${baseTurn}?transport=udp` };
+        const turnTcp = { urls: `${baseTurn}?transport=tcp` };
+        if (username) {
+            turnUdp.username = username;
+            turnTcp.username = username;
+        }
+        if (credential) {
+            turnUdp.credential = credential;
+            turnTcp.credential = credential;
+        }
+
+        ice.push(turnUdp, turnTcp);
         return ice;
     }
     return DEFAULT_ICE_SERVERS;
@@ -102,7 +109,7 @@ export function getEffectivePeerOptions() {
     const ice = getEffectiveIceServers();
     return {
         ...server,
-        debug: 0,
+        debug: 1,
         config: {
             iceServers: ice,
             iceTransportPolicy: 'all',
