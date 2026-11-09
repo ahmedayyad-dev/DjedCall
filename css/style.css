@@ -2076,6 +2076,24 @@
     color: var(--text-dim);
 }
 
+.yt-prompt-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in oklab, var(--gold) 15%, transparent);
+    color: var(--gold);
+}
+
+.yt-prompt-icon {
+    width: 22px;
+    height: 22px;
+}
+
+.yt-open-search-btn {
+    flex-shrink: 0;
+    text-decoration: none;
+}
+
 /* شارة انقطاع الاتصال */
 .me-status-disconnected {
     color: var(--danger) !important;

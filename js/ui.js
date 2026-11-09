@@ -393,6 +393,25 @@ export function renderSearchResults(results, onSelect) {
     }
 
     for (const item of results) {
+        if (item.isSearchPrompt) {
+            const card = document.createElement('div');
+            card.className = 'yt-result-card yt-search-prompt-card';
+            card.innerHTML = `
+                <div class="yt-thumb-wrap yt-prompt-icon-wrap">
+                    <svg class="icon yt-prompt-icon" aria-hidden="true"><use href="#i-search"/></svg>
+                </div>
+                <div class="yt-card-info">
+                    <span class="yt-card-title">${escapeHtml(item.title)}</span>
+                    <span class="yt-card-channel">${escapeHtml(item.author)}</span>
+                </div>
+                <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm yt-open-search-btn">
+                    <span>فتح يوتيوب ↗</span>
+                </a>
+            `;
+            refs.ytResultsItems.append(card);
+            continue;
+        }
+
         const card = document.createElement('div');
         card.className = 'yt-result-card';
         card.tabIndex = 0;

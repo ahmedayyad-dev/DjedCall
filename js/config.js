@@ -189,10 +189,3 @@ export const YT_PEER_TIMEOUT = 6000;
 export const YT_DRIFT_THRESHOLD = 1.2;
 export const YT_DRIFT_INTERVAL = 3000;
 export const YT_VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
-export const INVIDIOUS_INSTANCES = [
-    'https://yt.chocolatemoo53.com',
-];
-
-export const PIPED_INSTANCES = [
-    'https://api.piped.private.coffee',
-];

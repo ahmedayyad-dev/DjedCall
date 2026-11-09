@@ -262,7 +262,8 @@ async function handleYouTubeSearch(event) {
     if (directId) {
         ui.closeYouTubeModal();
         ytSearchInput.value = '';
-        await playYouTubeVideo(directId, `${STR.ytTitle} (${directId})`);
+        const details = await yt.fetchVideoDetails(directId);
+        await playYouTubeVideo(directId, details?.title || `${STR.ytTitle} (${directId})`);
         return;
     }
 

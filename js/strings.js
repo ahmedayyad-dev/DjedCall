@@ -78,9 +78,10 @@ export const STR = {
     ytNoResults: 'لم نجد نتائج مطابقة',
     ytSearchFail: 'تعذر تحميل نتائج البحث ▪ جرب رابطاً مباشراً',
     ytInvalidUrl: 'رابط يوتيوب غير صالح',
+    ytSearchDirectLink: (query) => `البحث عن "${query}" على YouTube الرسمي ↗`,
+    ytSearchPrivacyNote: 'للحفاظ على الخصوصية وبدون أطراف ثالثة، انسخ رابط الفيديو من يوتيوب والصقه هنا',
     ytResynced: 'تمت استعادة الاتصال وإعادة المزامنة مع الغرفة ✓',
     ytStopped: 'تم إيقاف الميديا',
-    ytAudioStreaming: 'جاري تشغيل تدفق الصوت المباشر...',
 
     netDisconnected: 'انقطع الاتصال بالإنترنت ▪ جاري المحاولة...',
     netReconnected: 'تمت استعادة الاتصال بالإنترنت بنجاح ✓',

@@ -1,15 +1,13 @@
-/* إدارة يوتيوب: المشاهدة والاستماع المتزامن، البحث، والتعافي اللحظي */
+/* إدارة يوتيوب: المشاهدة والاستماع المتزامن، البحث، والتعافي اللحظي بدون أطراف ثالثة */
 
 import {
-    INVIDIOUS_INSTANCES,
-    PIPED_INSTANCES,
     YT_DRIFT_INTERVAL,
     YT_DRIFT_THRESHOLD,
     YT_VIDEO_ID_PATTERN,
 } from './config.js';
 import { cleanSearchQuery, extractYouTubeId } from './guard.js';
 import { STR } from './strings.js';
-import { $, escapeHtml, formatTime, safeTimestamp } from './utils.js';
+import { $, escapeHtml } from './utils.js';
 
 let rtcModule = null;
 let uiModule = null;
@@ -24,10 +22,6 @@ export const state = {
     apiReady: false,
     playerReady: false,
     initPromise: null,
-
-    audioEl: null,
-    audioLoading: false,
-    audioUsingFallback: false,
 
     current: null,
     // current: {
@@ -47,36 +41,7 @@ export const state = {
     selectedMode: 'video',
 };
 
-function getAudioElement() {
-    if (!state.audioEl) {
-        state.audioEl = $('yt-audio-player');
-        if (state.audioEl) {
-            state.audioEl.addEventListener('play', () => {
-                if (!state.current) return;
-                state.current.isPlaying = true;
-                updatePlayButtons(true);
-            });
-            state.audioEl.addEventListener('pause', () => {
-                if (!state.current) return;
-                state.current.isPlaying = false;
-                updatePlayButtons(false);
-            });
-            state.audioEl.addEventListener('ended', () => {
-                stopMedia({ broadcast: isOwner() });
-            });
-            state.audioEl.addEventListener('error', () => {
-                // في حال تعذر خادم الصوت الخارجي، الرجوع الاحتياطي للمشغل بدون توقف الصوت
-                if (effectiveMode() === 'audio' && !state.audioUsingFallback) {
-                    state.audioUsingFallback = true;
-                    fallbackToIframeAudio();
-                }
-            });
-        }
-    }
-    return state.audioEl;
-}
-
-/* --------------------------- تحميل واجهة YouTube API --------------------------- */
+/* --------------------------- تحميل واجهة YouTube API الرسمية --------------------------- */
 
 export function ensureYouTubeAPI() {
     if (state.apiReady && window.YT?.Player) {
@@ -153,7 +118,6 @@ export async function initPlayer() {
 
 function onPlayerStateChange(event) {
     if (!state.current) return;
-    if (effectiveMode() === 'audio' && !state.audioUsingFallback) return;
 
     const code = event.data;
     const isPlaying = code === window.YT.PlayerState.PLAYING;
@@ -246,14 +210,7 @@ export async function loadMedia({
         lastHostTimeAt: Date.now(),
     };
 
-    state.audioUsingFallback = false;
-
-    if (effectiveMode() === 'audio') {
-        applyAudioMode(videoId, startTime, isPlaying);
-    } else {
-        applyVideoMode(videoId, startTime, isPlaying);
-    }
-
+    applyPlaybackState(videoId, startTime, isPlaying, effectiveMode());
     renderMediaUI();
 
     if (isOwner()) {
@@ -263,66 +220,7 @@ export async function loadMedia({
     }
 }
 
-async function applyAudioMode(videoId, startTime = 0, isPlaying = true) {
-    // 1. إيقاف مشغل الفيديو كلياً لمنع استهلاك الباقة ومعالجة الفيديو
-    if (state.player && state.playerReady) {
-        try {
-            state.player.pauseVideo();
-        } catch {}
-    }
-
-    const audioEl = getAudioElement();
-    if (!audioEl) return;
-
-    state.audioLoading = true;
-    state.audioUsingFallback = false;
-
-    try {
-        const streamUrl = await resolveAudioStreamUrl(videoId);
-        if (streamUrl && effectiveMode() === 'audio') {
-            audioEl.src = streamUrl;
-            audioEl.currentTime = startTime;
-            if (isPlaying) {
-                audioEl.play().catch(() => {
-                    // إذا منع المتصفح التشغيل التلقائي للصوت
-                });
-            }
-            state.audioLoading = false;
-            return;
-        }
-    } catch {
-        /* فشل جلب الرابط المباشر من الـ CDN */
-    }
-
-    state.audioLoading = false;
-    // احتياطي: تشغيل المشغل بدون إطار الفيديو لضمان استمرار الصوت
-    fallbackToIframeAudio();
-}
-
-function fallbackToIframeAudio() {
-    if (!state.player || !state.playerReady || !state.current) return;
-    state.isRemoteAction = true;
-    try {
-        state.player.seekTo(state.current.currentTime, true);
-        if (state.current.isPlaying) {
-            state.player.playVideo();
-        }
-    } finally {
-        setTimeout(() => {
-            state.isRemoteAction = false;
-        }, 400);
-    }
-}
-
-function applyVideoMode(videoId, startTime = 0, isPlaying = true) {
-    // إيقاف وتفريغ عنصر الصوت المنفصل
-    const audioEl = getAudioElement();
-    if (audioEl) {
-        audioEl.pause();
-        audioEl.removeAttribute('src');
-        audioEl.load();
-    }
-
+function applyPlaybackState(videoId, startTime = 0, isPlaying = true, mode = 'video') {
     if (!state.player || !state.playerReady) return;
 
     state.isRemoteAction = true;
@@ -331,9 +229,19 @@ function applyVideoMode(videoId, startTime = 0, isPlaying = true) {
             videoId,
             startSeconds: startTime,
         });
+
         if (!isPlaying) {
             state.player.pauseVideo();
         }
+
+        // عند التحويل لوضع الصوت نضبط دقة الفيديو إلى أقل حد ممكن لتوفير البيانات
+        try {
+            if (mode === 'audio') {
+                state.player.setPlaybackQuality('small');
+            } else {
+                state.player.setPlaybackQuality('default');
+            }
+        } catch {}
     } finally {
         setTimeout(() => {
             state.isRemoteAction = false;
@@ -345,10 +253,7 @@ export function playMedia() {
     if (!state.current) return;
     state.current.isPlaying = true;
 
-    const audioEl = getAudioElement();
-    if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl && audioEl.src) {
-        audioEl.play().catch(() => {});
-    } else if (state.player && state.playerReady) {
+    if (state.player && state.playerReady) {
         state.player.playVideo();
     }
 
@@ -362,10 +267,6 @@ export function pauseMedia() {
     if (!state.current) return;
     state.current.isPlaying = false;
 
-    const audioEl = getAudioElement();
-    if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl) {
-        audioEl.pause();
-    }
     if (state.player && state.playerReady) {
         state.player.pauseVideo();
     }
@@ -392,10 +293,6 @@ export function seekMedia(seconds) {
 
     state.isRemoteAction = true;
     try {
-        const audioEl = getAudioElement();
-        if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl && audioEl.src) {
-            audioEl.currentTime = target;
-        }
         if (state.player && state.playerReady) {
             state.player.seekTo(target, true);
         }
@@ -414,13 +311,6 @@ export function seekMedia(seconds) {
 export function stopMedia({ broadcast = true } = {}) {
     stopDriftChecker();
 
-    const audioEl = getAudioElement();
-    if (audioEl) {
-        audioEl.pause();
-        audioEl.removeAttribute('src');
-        audioEl.load();
-    }
-
     if (state.player && state.playerReady) {
         try {
             state.player.stopVideo();
@@ -437,10 +327,6 @@ export function stopMedia({ broadcast = true } = {}) {
 }
 
 function getCurrentPlaybackTime() {
-    const audioEl = getAudioElement();
-    if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl && audioEl.src) {
-        return audioEl.currentTime || 0;
-    }
     if (state.player && state.playerReady) {
         return state.player.getCurrentTime() || 0;
     }
@@ -458,7 +344,7 @@ export function switchMode(targetMode) {
         // صاحب الطلب: التغيير يطبق عند الجميع
         state.current.globalMode = mode;
         state.current.personalMode = null;
-        applyModeChange(mode, currentTime);
+        applyModeChange(mode);
         rtcModule?.broadcast?.({
             type: 'yt-mode',
             mode,
@@ -469,19 +355,21 @@ export function switchMode(targetMode) {
     } else {
         // مشارك آخر: تفضيل محلي فقط
         state.current.personalMode = mode;
-        applyModeChange(mode, currentTime);
+        applyModeChange(mode);
         uiModule?.toast(mode === 'audio' ? STR.ytPersonalModeAudio : STR.ytPersonalModeVideo, 'ok');
     }
 }
 
-function applyModeChange(mode, currentTime) {
+function applyModeChange(mode) {
     renderMediaUI();
-    if (!state.current) return;
-
-    if (mode === 'audio') {
-        applyAudioMode(state.current.videoId, currentTime, state.current.isPlaying);
-    } else {
-        applyVideoMode(state.current.videoId, currentTime, state.current.isPlaying);
+    if (state.player && state.playerReady) {
+        try {
+            if (mode === 'audio') {
+                state.player.setPlaybackQuality('small');
+            } else {
+                state.player.setPlaybackQuality('default');
+            }
+        } catch {}
     }
 }
 
@@ -533,14 +421,10 @@ function startTimelineWatcher() {
         if (!state.current) return;
 
         try {
-            const audioEl = getAudioElement();
             let current = 0;
             let duration = state.current.duration || 0;
 
-            if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl && audioEl.src) {
-                current = audioEl.currentTime || 0;
-                duration = audioEl.duration || duration;
-            } else if (state.player && state.playerReady) {
+            if (state.player && state.playerReady) {
                 current = state.player.getCurrentTime() || 0;
                 duration = state.player.getDuration() || duration;
             }
@@ -624,7 +508,7 @@ export function handleRemoteMode(message) {
     if (message.mode === 'video' || message.mode === 'audio') {
         state.current.globalMode = message.mode;
         state.current.personalMode = null;
-        applyModeChange(message.mode, Number(message.time) || state.current.currentTime);
+        applyModeChange(message.mode);
         uiModule?.toast(
             STR.ytOwnerModeChanged(message.mode === 'audio' ? STR.ytModeAudio : STR.ytModeVideo),
             'info',
@@ -680,28 +564,6 @@ export function requestStateFromPeers() {
     }
 }
 
-/* --------------------------- استخراج رابط تدفق الصوت من CDN --------------------------- */
-
-async function resolveAudioStreamUrl(videoId) {
-    for (const instance of INVIDIOUS_INSTANCES) {
-        try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 3500);
-
-            // فحص وجود مسار الصوت itag 140
-            const directUrl = `${instance}/latest_version?id=${videoId}&itag=140&local=true`;
-            const testRes = await fetch(directUrl, { method: 'HEAD', signal: controller.signal });
-            clearTimeout(timeout);
-
-            if (testRes.ok || testRes.status === 206) {
-                return directUrl;
-            }
-        } catch {}
-    }
-
-    return null;
-}
-
 /* --------------------------- مؤشر البحث وإرسال النشاط --------------------------- */
 
 export function notifyTyping(query) {
@@ -718,7 +580,36 @@ export function notifyTyping(query) {
     }, 350);
 }
 
-/* --------------------------- البحث المباشر (Invidious API) --------------------------- */
+/* --------------------------- جلب بيانات الفيديو الرسمية والبحث المباشر --------------------------- */
+
+export async function fetchVideoDetails(videoId) {
+    if (!videoId || !YT_VIDEO_ID_PATTERN.test(videoId)) return null;
+
+    try {
+        const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            return {
+                videoId,
+                title: data.title || `${STR.ytTitle} (${videoId})`,
+                author: data.author_name || '',
+                thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                lengthSeconds: 0,
+                durationFormatted: '0:00',
+            };
+        }
+    } catch {}
+
+    return {
+        videoId,
+        title: `${STR.ytTitle} (${videoId})`,
+        author: STR.appName,
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        lengthSeconds: 0,
+        durationFormatted: '0:00',
+    };
+}
 
 export async function searchVideos(query) {
     const trimmed = cleanSearchQuery(query);
@@ -726,74 +617,20 @@ export async function searchVideos(query) {
 
     const directId = extractYouTubeId(trimmed);
     if (directId) {
-        return [
-            {
-                videoId: directId,
-                title: `${STR.ytTitle} (${directId})`,
-                author: STR.appName,
-                thumbnail: `https://i.ytimg.com/vi/${directId}/hqdefault.jpg`,
-                lengthSeconds: 0,
-                durationFormatted: '0:00',
-            },
-        ];
+        const details = await fetchVideoDetails(directId);
+        return details ? [details] : [];
     }
 
-    for (const instance of INVIDIOUS_INSTANCES) {
-        try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 4000);
-
-            const url = `${instance}/api/v1/search?q=${encodeURIComponent(trimmed)}&type=video`;
-            const res = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeout);
-
-            if (!res.ok) continue;
-            const data = await res.json();
-            if (!Array.isArray(data) || data.length === 0) continue;
-
-            return data.slice(0, 8).map((item) => ({
-                videoId: item.videoId,
-                title: item.title,
-                author: item.author || '',
-                thumbnail: `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
-                lengthSeconds: item.lengthSeconds || 0,
-                durationFormatted: item.lengthSeconds ? formatDuration(item.lengthSeconds) : '0:00',
-            }));
-        } catch {}
-    }
-
-    for (const instance of PIPED_INSTANCES) {
-        try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 4000);
-
-            const url = `${instance}/search?q=${encodeURIComponent(trimmed)}&filter=videos`;
-            const res = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeout);
-
-            if (!res.ok) continue;
-            const data = await res.json();
-            const items = data?.items;
-            if (!Array.isArray(items) || items.length === 0) continue;
-
-            return items
-                .slice(0, 8)
-                .map((item) => {
-                    const vid = item.url ? item.url.replace('/watch?v=', '') : '';
-                    return {
-                        videoId: vid,
-                        title: item.title,
-                        author: item.uploaderName || '',
-                        thumbnail: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-                        lengthSeconds: item.duration || 0,
-                        durationFormatted: item.duration ? formatDuration(item.duration) : '0:00',
-                    };
-                })
-                .filter((x) => x.videoId);
-        } catch {}
-    }
-
-    return [];
+    // للمحافظة على خصوصية المستخدم والابتعاد عن أي أطراف ثالثة وسيطة، نوجه المستخدم للبحث على يوتيوب مباشرة
+    return [
+        {
+            isSearchPrompt: true,
+            query: trimmed,
+            title: STR.ytSearchDirectLink(trimmed),
+            author: STR.ytSearchPrivacyNote,
+            url: `https://www.youtube.com/results?search_query=${encodeURIComponent(trimmed)}`,
+        },
+    ];
 }
 
 function formatDuration(sec) {
@@ -805,7 +642,7 @@ function formatDuration(sec) {
 
 /* --------------------------- تحديث واجهات المستخدم (DOM) --------------------------- */
 
-function renderMediaUI() {
+export function renderMediaUI() {
     const stage = $('youtube-stage');
     const mini = $('mini-audio-bar');
     if (!stage || !mini || !state.current) return;
@@ -842,7 +679,7 @@ function renderMediaUI() {
     updatePlayButtons(state.current.isPlaying);
 }
 
-function hideMediaUI() {
+export function hideMediaUI() {
     const stage = $('youtube-stage');
     const mini = $('mini-audio-bar');
     if (stage) stage.hidden = true;
