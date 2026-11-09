@@ -104,6 +104,7 @@ export async function initPlayer() {
             events: {
                 onReady: () => {
                     state.playerReady = true;
+                    updateTitleFromPlayer();
                     startTimelineWatcher();
                     resolve(state.player);
                 },
@@ -116,8 +117,23 @@ export async function initPlayer() {
     });
 }
 
+function updateTitleFromPlayer() {
+    if (!state.player || !state.current) return;
+    try {
+        const data = state.player.getVideoData?.();
+        if (data?.title && data.title.trim()) {
+            const playerTitle = data.title.trim();
+            if (playerTitle !== state.current.title) {
+                state.current.title = playerTitle;
+                renderMediaUI();
+            }
+        }
+    } catch {}
+}
+
 function onPlayerStateChange(event) {
     if (!state.current) return;
+    updateTitleFromPlayer();
 
     const code = event.data;
     const isPlaying = code === window.YT.PlayerState.PLAYING;
@@ -198,7 +214,7 @@ export async function loadMedia({
 
     state.current = {
         videoId,
-        title: title || STR.defaultName,
+        title: title || `${STR.ytTitle} (${videoId})`,
         ownerId,
         ownerName: ownerName || STR.defaultName,
         globalMode: globalMode === 'audio' ? 'audio' : 'video',
@@ -209,6 +225,15 @@ export async function loadMedia({
         lastHostTime: startTime,
         lastHostTimeAt: Date.now(),
     };
+
+    if (!title || title.startsWith(STR.ytTitle)) {
+        fetchVideoDetails(videoId).then((details) => {
+            if (details?.title && state.current && state.current.videoId === videoId) {
+                state.current.title = details.title;
+                renderMediaUI();
+            }
+        });
+    }
 
     applyPlaybackState(videoId, startTime, isPlaying, effectiveMode());
     renderMediaUI();
@@ -427,6 +452,9 @@ function startTimelineWatcher() {
             if (state.player && state.playerReady) {
                 current = state.player.getCurrentTime() || 0;
                 duration = state.player.getDuration() || duration;
+                if (!state.current.title || state.current.title.startsWith(STR.ytTitle)) {
+                    updateTitleFromPlayer();
+                }
             }
 
             state.current.currentTime = current;
@@ -657,8 +685,14 @@ export function renderMediaUI() {
     const miniOwner = $('mini-audio-owner');
 
     if (ownerBadge) ownerBadge.textContent = `بطلب من: ${ownerName}`;
-    if (videoTitle) videoTitle.textContent = title;
-    if (miniTitle) miniTitle.textContent = title;
+    if (videoTitle) {
+        videoTitle.textContent = title;
+        videoTitle.setAttribute('title', title);
+    }
+    if (miniTitle) {
+        miniTitle.textContent = title;
+        miniTitle.setAttribute('title', title);
+    }
     if (miniOwner) miniOwner.textContent = `بطلب من: ${ownerName}`;
 
     const modeLabel = $('yt-mode-label');

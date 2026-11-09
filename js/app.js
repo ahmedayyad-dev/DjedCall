@@ -260,9 +260,10 @@ async function handleYouTubeSearch(event) {
 
     const directId = extractYouTubeId(query);
     if (directId) {
+        ui.setSearchResultsLoading(true);
+        const details = await yt.fetchVideoDetails(directId);
         ui.closeYouTubeModal();
         ytSearchInput.value = '';
-        const details = await yt.fetchVideoDetails(directId);
         await playYouTubeVideo(directId, details?.title || `${STR.ytTitle} (${directId})`);
         return;
     }
@@ -271,6 +272,8 @@ async function handleYouTubeSearch(event) {
     try {
         const results = await yt.searchVideos(query);
         ui.renderSearchResults(results, (selected) => {
+            ui.closeYouTubeModal();
+            ytSearchInput.value = '';
             playYouTubeVideo(selected.videoId, selected.title);
         });
     } catch {
@@ -344,8 +347,26 @@ function init() {
         yt.state.selectedMode = 'audio';
     });
 
+    let previewDebounce = null;
     ytSearchInput?.addEventListener('input', () => {
-        yt.notifyTyping(ytSearchInput.value);
+        const val = ytSearchInput.value.trim();
+        yt.notifyTyping(val);
+
+        clearTimeout(previewDebounce);
+        const directId = extractYouTubeId(val);
+        if (directId) {
+            ui.setSearchResultsLoading(true);
+            previewDebounce = setTimeout(async () => {
+                const details = await yt.fetchVideoDetails(directId);
+                if (details && ytSearchInput.value.trim() === val) {
+                    ui.renderSearchResults([details], (selected) => {
+                        ui.closeYouTubeModal();
+                        ytSearchInput.value = '';
+                        playYouTubeVideo(selected.videoId, selected.title);
+                    });
+                }
+            }, 250);
+        }
     });
     ytSearchForm?.addEventListener('submit', handleYouTubeSearch);
 

@@ -1793,11 +1793,13 @@
 }
 
 .yt-title {
-    font-weight: 600;
+    font-weight: 700;
     color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 1;
+    min-width: 0;
 }
 
 .yt-actions {
@@ -2063,12 +2065,14 @@
 }
 
 .yt-card-title {
-    font-size: .78rem;
-    font-weight: 600;
+    font-size: .84rem;
+    font-weight: 700;
     color: var(--text);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.35;
 }
 
 .yt-card-channel {
