@@ -58,8 +58,20 @@ export function chime(kind = 'join') {
 
 /* --------------------------- المايك --------------------------- */
 
+export function createSilentStream() {
+    const context = ensureAudioContext();
+    if (!context) return null;
+    try {
+        const dst = context.createMediaStreamDestination();
+        return dst.stream;
+    } catch {
+        return null;
+    }
+}
+
 export function currentMic() {
-    return micStream;
+    if (isMicLive()) return micStream;
+    return createSilentStream();
 }
 
 export function isMicLive() {

@@ -2,6 +2,7 @@
 
 import {
     INVIDIOUS_INSTANCES,
+    PIPED_INSTANCES,
     YT_DRIFT_INTERVAL,
     YT_DRIFT_THRESHOLD,
     YT_VIDEO_ID_PATTERN,
@@ -748,16 +749,47 @@ export async function searchVideos(query) {
 
             if (!res.ok) continue;
             const data = await res.json();
-            if (!Array.isArray(data)) continue;
+            if (!Array.isArray(data) || data.length === 0) continue;
 
             return data.slice(0, 8).map((item) => ({
                 videoId: item.videoId,
                 title: item.title,
                 author: item.author || '',
-                thumbnail: item.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
+                thumbnail: `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
                 lengthSeconds: item.lengthSeconds || 0,
                 durationFormatted: item.lengthSeconds ? formatDuration(item.lengthSeconds) : '0:00',
             }));
+        } catch {}
+    }
+
+    for (const instance of PIPED_INSTANCES) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+
+            const url = `${instance}/search?q=${encodeURIComponent(trimmed)}&filter=videos`;
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeout);
+
+            if (!res.ok) continue;
+            const data = await res.json();
+            const items = data?.items;
+            if (!Array.isArray(items) || items.length === 0) continue;
+
+            return items
+                .slice(0, 8)
+                .map((item) => {
+                    const vid = item.url ? item.url.replace('/watch?v=', '') : '';
+                    return {
+                        videoId: vid,
+                        title: item.title,
+                        author: item.uploaderName || '',
+                        thumbnail: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+                        lengthSeconds: item.duration || 0,
+                        durationFormatted: item.duration ? formatDuration(item.duration) : '0:00',
+                    };
+                })
+                .filter((x) => x.videoId);
         } catch {}
     }
 

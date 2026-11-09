@@ -1237,14 +1237,55 @@ export function rename(nextName) {
     return true;
 }
 
-export function toggleMute() {
+export async function toggleMute() {
     if (!state.inRoom) return;
-    state.muted = !state.muted;
-    audio.setMicEnabled(!state.muted);
+    const nextMuted = !state.muted;
+    state.muted = nextMuted;
+
     ui.updateMicButton(state.muted);
     ui.setLocalMuted(state.muted);
     broadcast({ type: 'state', muted: state.muted, name: state.myName });
-    ui.toast(state.muted ? STR.micMutedToast : STR.micEnabledToast, 'ok');
+
+    if (state.muted) {
+        // إيقاف عتاد المايكروفون وإلغاء مسار التسجيل لإطفاء شارة المايك بنظام التشغيل
+        audio.releaseMic();
+        for (const entry of state.peers.values()) {
+            if (entry.pc) {
+                for (const sender of entry.pc.getSenders()) {
+                    if (sender.track?.kind === 'audio' || sender.track === null) {
+                        try {
+                            sender.replaceTrack(null);
+                        } catch {}
+                    }
+                }
+            }
+        }
+        ui.toast(STR.micMutedToast, 'ok');
+    } else {
+        // إعادة الحصول على المايك وربطه بالاتصالات القائمة
+        try {
+            const stream = await audio.acquireMic();
+            const track = stream.getAudioTracks()[0];
+            for (const entry of state.peers.values()) {
+                if (entry.pc && track) {
+                    for (const sender of entry.pc.getSenders()) {
+                        if (sender.track?.kind === 'audio' || sender.track === null) {
+                            try {
+                                sender.replaceTrack(track);
+                            } catch {}
+                        }
+                    }
+                }
+            }
+            audio.setMicEnabled(true);
+            ui.toast(STR.micEnabledToast, 'ok');
+        } catch (error) {
+            state.muted = true;
+            ui.updateMicButton(true);
+            ui.setLocalMuted(true);
+            ui.toast(micErrorMessage(error), 'error');
+        }
+    }
 }
 
 function legacyCopy(text) {
