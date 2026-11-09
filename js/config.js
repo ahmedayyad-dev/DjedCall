@@ -29,6 +29,7 @@ export const STORAGE_KEYS = {
     name: 'djedcall:name',
     room: 'djedcall:room',
     servers: 'djedcall:servers',
+    ytQuality: 'djedcall:yt-quality',
 };
 
 /* خادم التنسيق الافتراضي الخاص بنا (PeerJS) */
@@ -182,3 +183,15 @@ export const PEER_ID_PATTERN = /^djedcall-m-[a-z0-9]{1,24}-[a-z0-9]{4,16}$/;
 /* حدود البيانات الخام القادمة من الشبكة قبل التنظيف */
 export const RAW_NAME_MAX = 200;
 export const RAW_TEXT_MAX = 2000;
+
+/* إعدادات يوتيوب والتزامن وفحص التواجد */
+export const YT_PRESENCE_INTERVAL = 5000;
+export const YT_PEER_TIMEOUT = 6000;
+export const YT_DRIFT_THRESHOLD = 1.2;
+export const YT_DRIFT_INTERVAL = 3000;
+export const YT_VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
+export const INVIDIOUS_INSTANCES = [
+    'https://inv.nadeko.net',
+    'https://invidious.nerdvpn.de',
+    'https://inv.tux.pizza',
+];

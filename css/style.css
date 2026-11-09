@@ -1728,3 +1728,377 @@
         transition-duration: .001ms !important;
     }
 }
+
+/* ============================================================
+   يوتيوب: المشاهدة المتزامنة، شريط الصوت، والبحث
+   ============================================================ */
+
+.yt-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto 16px auto;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 10px;
+    box-shadow: var(--shadow-md);
+    animation: card-in var(--dur) var(--ease);
+}
+
+.yt-video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: #000;
+}
+
+.yt-video-wrap iframe,
+.yt-video-wrap #youtube-player {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+}
+
+.yt-controls-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 4px;
+}
+
+.yt-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .8rem;
+    overflow: hidden;
+}
+
+.yt-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: color-mix(in oklab, var(--gold) 15%, transparent);
+    color: var(--gold-bright);
+    border-radius: var(--pill);
+    font-size: .68rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.yt-title {
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yt-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.yt-time-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 180px;
+    font-size: .75rem;
+    color: var(--text-dim);
+}
+
+.yt-slider {
+    flex: 1;
+    height: 6px;
+    border-radius: var(--pill);
+    background: var(--border-strong);
+    accent-color: var(--gold);
+    cursor: pointer;
+}
+
+.yt-select {
+    padding: 4px 8px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: var(--pill);
+    font-family: inherit;
+    font-size: .72rem;
+    cursor: pointer;
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.yt-select:hover,
+.yt-select:focus {
+    color: var(--text);
+    border-color: var(--gold);
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: .75rem;
+    border-radius: var(--pill);
+}
+
+/* شريط الصوت المصغر (وضع الصوت فقط) */
+.mini-audio-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto 16px auto;
+    padding: 10px 16px;
+    background: color-mix(in oklab, var(--surface) 92%, var(--gold) 8%);
+    border: 1px solid color-mix(in oklab, var(--gold) 35%, var(--border-strong));
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    animation: card-in var(--dur) var(--ease);
+}
+
+.mini-audio-lead {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+}
+
+.mini-audio-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--pill);
+    background: color-mix(in oklab, var(--gold) 20%, transparent);
+    color: var(--gold-bright);
+    flex-shrink: 0;
+}
+
+.mini-audio-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.mini-audio-title {
+    font-size: .84rem;
+    font-weight: 700;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mini-audio-sub {
+    font-size: .68rem;
+    color: var(--gold);
+}
+
+.mini-audio-timeline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1.5;
+    min-width: 160px;
+    font-size: .72rem;
+    color: var(--text-dim);
+}
+
+.mini-audio-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* لافتة البحث اللحظية */
+.yt-searching-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: color-mix(in oklab, var(--gold) 15%, transparent);
+    border: 1px solid color-mix(in oklab, var(--gold) 40%, transparent);
+    border-radius: var(--radius-sm);
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--gold-bright);
+    margin-bottom: 12px;
+    animation: msg-in var(--dur) var(--ease);
+}
+
+/* نافذة البحث والخيارات */
+.yt-modal-card {
+    max-width: 580px;
+}
+
+.yt-modal-search {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.yt-search-form {
+    display: flex;
+    gap: 8px;
+}
+
+.yt-search-form .input-wrap {
+    flex: 1;
+}
+
+.yt-options-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 4px;
+}
+
+.yt-options-label {
+    font-size: .78rem;
+    color: var(--text-dim);
+}
+
+.segmented-control {
+    display: inline-flex;
+    background: var(--surface-2);
+    padding: 3px;
+    border-radius: var(--pill);
+    border: 1px solid var(--border);
+}
+
+.seg-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    font-size: .75rem;
+    font-weight: 600;
+    font-family: inherit;
+    color: var(--text-dim);
+    background: transparent;
+    border: none;
+    border-radius: var(--pill);
+    cursor: pointer;
+    transition: all var(--dur) var(--ease);
+}
+
+.seg-btn.active {
+    background: var(--gold);
+    color: #000;
+}
+
+/* قائمة نتائج البحث */
+.yt-results-list {
+    margin-top: 14px;
+    max-height: 380px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.yt-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    font-size: .84rem;
+    color: var(--text-dim);
+}
+
+.yt-cards-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.yt-result-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: color-mix(in oklab, var(--surface-2) 60%, transparent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: right;
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.yt-result-card:hover {
+    background: color-mix(in oklab, var(--gold) 10%, transparent);
+    border-color: var(--gold);
+}
+
+.yt-thumb-wrap {
+    position: relative;
+    width: 80px;
+    height: 48px;
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: #000;
+}
+
+.yt-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.yt-duration-badge {
+    position: absolute;
+    bottom: 2px;
+    left: 2px;
+    padding: 1px 4px;
+    font-size: .6rem;
+    font-family: var(--mono);
+    color: #fff;
+    background: rgba(0, 0, 0, .8);
+    border-radius: 3px;
+}
+
+.yt-card-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.yt-card-title {
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yt-card-channel {
+    font-size: .68rem;
+    color: var(--text-dim);
+}
+
+/* شارة انقطاع الاتصال */
+.me-status-disconnected {
+    color: var(--danger) !important;
+}
+
+.me-status-disconnected .icon {
+    font-size: 13px;
+}

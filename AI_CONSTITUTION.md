@@ -21,9 +21,9 @@
 - **Messages Describe Changes**: Commit messages describe the change, not the conversation.
 
 ## Absolute Prohibitions
-- **Voice and Text Only**: No video, screen sharing, file transfer, or recording.
+- **Voice, Text, and Synced YouTube Media**: Synchronized YouTube playback (video and audio mode) is supported. No camera, screen sharing, file transfer, or recording.
 - **No Backend**: No application server, database, or server-side storage. The app is static files on Cloudflare Pages; PeerJS is signaling only.
-- **No Runtime Third-Party Requests**: Scripts, styles, fonts, and icons must be served from this repository.
+- **No Runtime Third-Party Requests**: Scripts, styles, fonts, and icons must be served from this repository, with YouTube Iframe API permitted for synchronized media.
 - **No Runtime CDN Assets**: Any vendored library needs a pinned local copy and an SRI hash.
 - **No Dynamic Code**: Never use `eval`, `new Function`, `document.write`, or dynamic script injection.
 - **No Untrusted HTML**: Never pass untrusted data to `innerHTML`. Use `textContent` or `escapeHtml`.
@@ -51,6 +51,7 @@ Module boundaries:
 - `net.js`: media route classification.
 - `ui.js`: DOM rendering only, never signaling.
 - `rtc.js`: PeerJS, mesh, discovery gateway, and data channels.
+- `youtube.js`: YouTube Iframe API, search, playback sync, and drift correction.
 - `app.js`: wiring and initialization.
 
 No circular imports. Imports at the top of each file only.

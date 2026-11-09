@@ -8,12 +8,13 @@ import {
     resetCustomServers,
     saveCustomServers,
 } from './config.js';
-import { cleanName } from './guard.js';
+import { cleanName, extractYouTubeId } from './guard.js';
 import { STR } from './strings.js';
 import { $, generateRoomCode, readRoute, readStorage, writeStorage } from './utils.js';
 import * as audio from './audio.js';
 import * as rtc from './rtc.js';
 import * as ui from './ui.js';
+import * as yt from './youtube.js';
 
 const joinForm = $('join-form');
 const usernameInput = $('username-input');
@@ -46,6 +47,25 @@ const cfgPeerSecure = $('cfg-peer-secure');
 const cfgTurnUrl = $('cfg-turn-url');
 const cfgTurnUser = $('cfg-turn-user');
 const cfgTurnPass = $('cfg-turn-pass');
+
+/* عناصر يوتيوب والمشاهدة المشتركة */
+const toggleYouTubeBtn = $('toggle-youtube-btn');
+const closeYouTubeBtn = $('close-youtube-btn');
+const ytModal = $('youtube-modal');
+const ytSearchForm = $('yt-search-form');
+const ytSearchInput = $('yt-search-input');
+const ytOptVideo = $('yt-opt-video');
+const ytOptAudio = $('yt-opt-audio');
+const ytPlayToggleBtn = $('yt-play-toggle-btn');
+const ytStopBtn = $('yt-stop-btn');
+const ytModeToggleBtn = $('yt-mode-toggle-btn');
+const ytQualitySelect = $('yt-quality-select');
+const ytSeekBar = $('yt-seek-bar');
+
+const miniAudioPlayBtn = $('mini-audio-play-btn');
+const miniAudioModeBtn = $('mini-audio-mode-btn');
+const miniAudioStopBtn = $('mini-audio-stop-btn');
+const miniAudioSeek = $('mini-audio-seek');
 
 async function handleJoin(event) {
     event.preventDefault();
@@ -203,6 +223,62 @@ function handleResetSettings() {
     ui.toast(STR.settingsReset, 'ok');
 }
 
+function handleSeek(slider) {
+    if (!yt.state.current?.duration) return;
+    const pct = Number(slider.value) || 0;
+    const targetSec = (pct / 100) * yt.state.current.duration;
+    yt.seekMedia(targetSec);
+}
+
+async function playYouTubeVideo(videoId, title) {
+    if (!videoId) return;
+    const mode = yt.state.selectedMode || 'video';
+    await yt.loadMedia({
+        videoId,
+        title,
+        ownerId: rtc.state.myId,
+        ownerName: rtc.state.myName,
+        globalMode: mode,
+        startTime: 0,
+        isPlaying: true,
+    });
+    rtc.broadcast({
+        type: 'yt-play',
+        videoId,
+        title,
+        ownerId: rtc.state.myId,
+        ownerName: rtc.state.myName,
+        globalMode: mode,
+        time: 0,
+        isPlaying: true,
+    });
+}
+
+async function handleYouTubeSearch(event) {
+    event.preventDefault();
+    const query = ytSearchInput.value.trim();
+    if (!query) return;
+
+    const directId = extractYouTubeId(query);
+    if (directId) {
+        ui.closeYouTubeModal();
+        ytSearchInput.value = '';
+        await playYouTubeVideo(directId, `${STR.ytTitle} (${directId})`);
+        return;
+    }
+
+    ui.setSearchResultsLoading(true);
+    try {
+        const results = await yt.searchVideos(query);
+        ui.renderSearchResults(results, (selected) => {
+            playYouTubeVideo(selected.videoId, selected.title);
+        });
+    } catch {
+        ui.toast(STR.ytSearchFail, 'error');
+        ui.setSearchResultsLoading(false);
+    }
+}
+
 function init() {
     rtc.wireAudioHandlers();
 
@@ -239,10 +315,53 @@ function init() {
         if (event.target === settingsModal) closeSettings();
     });
     window.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && settingsModal && !settingsModal.hidden) {
-            closeSettings();
+        if (event.key === 'Escape') {
+            if (settingsModal && !settingsModal.hidden) {
+                closeSettings();
+            } else if (ui.isYouTubeModalOpen()) {
+                ui.closeYouTubeModal();
+            }
         }
     });
+
+    toggleYouTubeBtn?.addEventListener('click', () => {
+        if (!rtc.state.inRoom) return;
+        ui.openYouTubeModal();
+    });
+    closeYouTubeBtn?.addEventListener('click', ui.closeYouTubeModal);
+    ytModal?.addEventListener('click', (event) => {
+        if (event.target === ytModal) ui.closeYouTubeModal();
+    });
+
+    ytOptVideo?.addEventListener('click', () => {
+        ytOptVideo.classList.add('active');
+        ytOptAudio?.classList.remove('active');
+        yt.state.selectedMode = 'video';
+    });
+    ytOptAudio?.addEventListener('click', () => {
+        ytOptAudio.classList.add('active');
+        ytOptVideo?.classList.remove('active');
+        yt.state.selectedMode = 'audio';
+    });
+
+    ytSearchInput?.addEventListener('input', () => {
+        yt.notifyTyping(ytSearchInput.value);
+    });
+    ytSearchForm?.addEventListener('submit', handleYouTubeSearch);
+
+    ytPlayToggleBtn?.addEventListener('click', yt.togglePlay);
+    miniAudioPlayBtn?.addEventListener('click', yt.togglePlay);
+
+    ytStopBtn?.addEventListener('click', () => yt.stopMedia({ broadcast: true }));
+    miniAudioStopBtn?.addEventListener('click', () => yt.stopMedia({ broadcast: true }));
+
+    ytModeToggleBtn?.addEventListener('click', yt.toggleMode);
+    miniAudioModeBtn?.addEventListener('click', yt.toggleMode);
+
+    ytQualitySelect?.addEventListener('change', (e) => yt.setPlaybackQuality(e.target.value));
+
+    ytSeekBar?.addEventListener('change', () => handleSeek(ytSeekBar));
+    miniAudioSeek?.addEventListener('change', () => handleSeek(miniAudioSeek));
 
     window.addEventListener('focus', () => {
         if (ui.isChatVisible()) ui.clearUnread();

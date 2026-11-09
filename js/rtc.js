@@ -16,7 +16,10 @@ import {
     RELAY_LIST_TIMEOUT,
     RELAY_MAX_MEMBERS,
     ROOM_PREFIX,
+    YT_PEER_TIMEOUT,
+    YT_PRESENCE_INTERVAL,
     getEffectivePeerOptions,
+    getEffectivePeerServer,
 } from './config.js';
 import { STR } from './strings.js';
 import { cleanMessage, cleanName, cleanRoomLabel, hasLink, validPeerId } from './guard.js';
@@ -24,6 +27,7 @@ import { randomId, safeSend, safeTimestamp, sanitizeRoom, writeRoute } from './u
 import { describeConnection } from './net.js';
 import * as audio from './audio.js';
 import * as ui from './ui.js';
+import * as yt from './youtube.js';
 
 export const state = {
     peer: null,
@@ -143,6 +147,26 @@ if (typeof document !== 'undefined') {
     });
 }
 
+if (typeof window !== 'undefined') {
+    window.addEventListener('offline', () => {
+        ui.setPresenceStatus(false);
+        if (state.inRoom) {
+            ui.toast(STR.netDisconnected, 'error');
+        }
+    });
+
+    window.addEventListener('online', () => {
+        ui.setPresenceStatus(true);
+        if (state.inRoom) {
+            ui.toast(STR.netReconnected, 'ok');
+            recoverNetworkSession();
+            setTimeout(() => {
+                yt.requestStateFromPeers();
+            }, 1000);
+        }
+    });
+}
+
 export async function join(roomRaw, name) {
     if (state.inRoom || state.joining) return;
     state.joining = true;
@@ -216,6 +240,9 @@ export async function join(roomRaw, name) {
         });
         state.peer.on('error', onPeerError);
 
+        yt.registerDependencies({ state, broadcast }, ui);
+        ui.setPresenceStatus(true);
+
         await joinDiscovery();
         startHeartbeat();
     } finally {
@@ -268,6 +295,7 @@ export function teardown() {
 
     releaseWakeLock();
     stopHeartbeat();
+    yt.stopMedia({ broadcast: false });
     audio.stopBitrateStats();
     audio.stopVAD();
     for (const peerId of [...state.peers.keys()]) dropPeer(peerId, { silent: true });
@@ -646,6 +674,11 @@ function connectToPeer(peerId, name, muted = false) {
         clearTimeout(guard);
         entry.lastSeen = Date.now();
         safeSend(conn, { type: 'hello', name: state.myName, muted: state.muted });
+        if (yt.state.current) {
+            yt.handleStateRequest(conn);
+        } else {
+            safeSend(conn, { type: 'yt-state-req' });
+        }
         if (!state.peers.get(peerId)?.mediaConn) startMediaCall(peerId);
     });
     conn.on('data', (message) => handleData(peerId, message));
@@ -692,6 +725,9 @@ function onIncomingData(conn) {
     const sendHello = () => {
         entry.lastSeen = Date.now();
         safeSend(conn, { type: 'hello', name: state.myName, muted: state.muted });
+        if (yt.state.current) {
+            yt.handleStateRequest(conn);
+        }
     };
     if (conn.open) sendHello();
     else conn.on('open', sendHello);
@@ -973,17 +1009,27 @@ function startHeartbeat() {
             return;
         }
 
+        // 0. فحص اتصال الشبكة المحلي
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            ui.setPresenceStatus(false);
+            return;
+        }
+
         // 1. حارس مقبس التنسيق: إذا انقطع الاتصال بالخادم
         if (!state.peer || state.peer.destroyed) {
+            ui.setPresenceStatus(false);
             recoverNetworkSession();
             return;
         }
         if (state.peer.disconnected) {
+            ui.setPresenceStatus(false);
             try {
                 state.peer.reconnect();
             } catch {
                 if (state.peers.size === 0) recoverNetworkSession();
             }
+        } else {
+            ui.setPresenceStatus(true);
         }
 
         // 2. حارس البوابة: إذا كنا وحدنا في الغرفة، نتحقق من اتصال البوابة بهدوء
@@ -991,14 +1037,14 @@ function startHeartbeat() {
             if (!state.isRelay) {
                 if (!state.relayConn || !state.relayConn.open) {
                     relayWatchTicks += 1;
-                    if (relayWatchTicks >= 3) {
+                    if (relayWatchTicks >= 2) {
                         relayWatchTicks = 0;
                         connectToRelay();
                     }
                 } else {
                     relayWatchTicks = 0;
                     aloneTicks += 1;
-                    if (aloneTicks >= 3) {
+                    if (aloneTicks >= 2) {
                         aloneTicks = 0;
                         safeSend(state.relayConn, { type: 'hello', name: state.myName });
                     }
@@ -1017,17 +1063,17 @@ function startHeartbeat() {
             aloneTicks = 0;
         }
 
-        // 3. نبضات فحص الأقران
+        // 3. نبضات فحص الأقران كل 5 ثوانٍ وإسقاط من لا يستجيب فوراً
         const now = Date.now();
         for (const [peerId, entry] of state.peers) {
             if (entry.dataConn?.open) {
                 safeSend(entry.dataConn, { type: 'ping' });
-                if (entry.lastSeen && now - entry.lastSeen > 20000) {
+                if (entry.lastSeen && now - entry.lastSeen > YT_PEER_TIMEOUT) {
                     dropPeer(peerId);
                 }
             }
         }
-    }, 2000);
+    }, YT_PRESENCE_INTERVAL);
 }
 
 function stopHeartbeat() {
@@ -1097,6 +1143,42 @@ function handleData(peerId, message) {
             entry.lastStateAt = now;
             if (typeof message.muted === 'boolean') entry.muted = message.muted;
             ui.updatePeerCard(entry);
+            return;
+        }
+
+        if (message.type === 'yt-activity') {
+            yt.handleRemoteActivity(message, entry.name);
+            return;
+        }
+
+        if (message.type === 'yt-play') {
+            yt.handleRemotePlay(message, entry.name);
+            return;
+        }
+
+        if (message.type === 'yt-sync') {
+            yt.handleRemoteSync(message);
+            return;
+        }
+
+        if (message.type === 'yt-mode') {
+            yt.handleRemoteMode(message);
+            return;
+        }
+
+        if (message.type === 'yt-stop') {
+            yt.handleRemoteStop();
+            return;
+        }
+
+        if (message.type === 'yt-state-req') {
+            yt.handleStateRequest(entry.dataConn);
+            return;
+        }
+
+        if (message.type === 'yt-state-resp') {
+            yt.handleStateResponse(message);
+            return;
         }
     } catch {
         /* رسالة مشوّهة — تجاهل بهدوء */
@@ -1111,7 +1193,7 @@ function allowIncomingChat(entry) {
     return true;
 }
 
-function broadcast(payload) {
+export function broadcast(payload) {
     for (const entry of state.peers.values()) safeSend(entry.dataConn, payload);
 }
 

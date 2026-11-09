@@ -52,6 +52,13 @@
         <symbol id="i-signal" viewBox="0 0 24 24"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></symbol>
         <symbol id="i-github" viewBox="0 0 24 24"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></symbol>
         <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+        <symbol id="i-youtube" viewBox="0 0 24 24"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17z"/><polygon points="10 15 15 12 10 9 10 15"/></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></symbol>
+        <symbol id="i-video" viewBox="0 0 24 24"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></symbol>
+        <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+        <symbol id="i-wifi-off" viewBox="0 0 24 24"><line x1="2" x2="22" y1="2" y2="22"/><path d="M12 20h.01"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.85a10 10 0 0 1 5.3-2.65"/><path d="M16 10.5a10 10 0 0 1 3 2.35"/><path d="M1.42 9a16 16 0 0 1 4.58-3.7"/></symbol>
     </svg>
 
     <div id="toast-container" class="toasts" role="status" aria-live="polite"></div>
@@ -146,6 +153,10 @@
             </div>
 
             <div class="room-actions">
+                <button id="toggle-youtube-btn" type="button" class="btn btn-ghost" title="يوتيوب">
+                    <svg class="icon" aria-hidden="true"><use href="#i-youtube"/></svg>
+                    <span class="hide-sm">يوتيوب</span>
+                </button>
                 <a href="https://github.com/ahmedayyad-dev/DjedCall" target="_blank" rel="noopener noreferrer" class="btn btn-icon" aria-label="مستودع المشروع على GitHub" title="مستودع المشروع على GitHub">
                     <svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>
                 </a>
@@ -185,6 +196,74 @@
                         <button type="button" id="rename-cancel-btn" class="btn btn-ghost">إلغاء</button>
                     </form>
                 </div>
+
+                <!-- مسرح يوتيوب المدمج (وضع الفيديو) -->
+                <div id="youtube-stage" class="yt-stage" hidden>
+                    <div class="yt-video-wrap">
+                        <div id="youtube-player"></div>
+                    </div>
+                    <div class="yt-controls-bar">
+                        <div class="yt-info">
+                            <span class="yt-badge" id="yt-owner-badge">بطلب من: —</span>
+                            <span class="yt-title" id="yt-video-title">—</span>
+                        </div>
+                        <div class="yt-actions">
+                            <div class="yt-time-wrap">
+                                <span id="yt-current-time" class="mono">0:00</span>
+                                <input id="yt-seek-bar" type="range" min="0" max="100" value="0" step="0.5" class="yt-slider">
+                                <span id="yt-duration-time" class="mono">0:00</span>
+                            </div>
+                            <select id="yt-quality-select" class="yt-select" title="جودة الفيديو لجهازك">
+                                <option value="auto">جودة: تلقائي</option>
+                                <option value="hd1080">1080p</option>
+                                <option value="hd720">720p</option>
+                                <option value="large">480p</option>
+                                <option value="medium">360p</option>
+                                <option value="small">240p</option>
+                                <option value="tiny">144p</option>
+                            </select>
+                            <button id="yt-mode-toggle-btn" type="button" class="btn btn-ghost btn-sm" title="تحويل إلى صوت فقط">
+                                <svg class="icon" aria-hidden="true"><use href="#i-music"/></svg>
+                                <span id="yt-mode-label">صوت فقط</span>
+                            </button>
+                            <button id="yt-play-toggle-btn" type="button" class="btn btn-ghost btn-icon btn-sm" title="تشغيل / إيقاف مؤقت">
+                                <svg class="icon" aria-hidden="true"><use id="yt-play-icon" href="#i-pause"/></svg>
+                            </button>
+                            <button id="yt-stop-btn" type="button" class="btn btn-ghost btn-icon btn-sm" title="إيقاف الميديا">
+                                <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- شريط الصوت المصغر (وضع الصوت فقط) -->
+                <div id="mini-audio-bar" class="mini-audio-bar" hidden>
+                    <div class="mini-audio-lead">
+                        <span class="mini-audio-glyph"><svg class="icon" aria-hidden="true"><use href="#i-music"/></svg></span>
+                        <div class="mini-audio-meta">
+                            <span id="mini-audio-title" class="mini-audio-title">—</span>
+                            <span id="mini-audio-owner" class="mini-audio-sub">—</span>
+                        </div>
+                    </div>
+                    <div class="mini-audio-timeline">
+                        <span id="mini-audio-time" class="mono">0:00</span>
+                        <input id="mini-audio-seek" type="range" min="0" max="100" value="0" step="0.5" class="yt-slider">
+                        <span id="mini-audio-duration" class="mono">0:00</span>
+                    </div>
+                    <div class="mini-audio-actions">
+                        <button id="mini-audio-play-btn" type="button" class="btn btn-ghost btn-icon btn-sm" title="تشغيل / إيقاف مؤقت">
+                            <svg class="icon" aria-hidden="true"><use id="mini-audio-play-icon" href="#i-pause"/></svg>
+                        </button>
+                        <button id="mini-audio-mode-btn" type="button" class="btn btn-ghost btn-sm" title="عرض الفيديو">
+                            <svg class="icon" aria-hidden="true"><use href="#i-video"/></svg>
+                            <span id="mini-audio-mode-label">فيديو</span>
+                        </button>
+                        <button id="mini-audio-stop-btn" type="button" class="btn btn-ghost btn-icon btn-sm" title="إيقاف الميديا">
+                            <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+                        </button>
+                    </div>
+                </div>
+
                 <div id="participants-grid" class="participants"></div>
             </section>
 
@@ -237,6 +316,61 @@
                 </button>
             </div>
         </footer>
+    </div>
+
+    <!-- ===================== نافذة يوتيوب: البحث وإضافة الروابط ===================== -->
+    <div id="youtube-modal" class="modal-backdrop" hidden>
+        <div class="modal-card yt-modal-card" role="dialog" aria-modal="true" aria-labelledby="yt-modal-title">
+            <header class="modal-header">
+                <div class="modal-title-wrap">
+                    <svg class="icon modal-icon" aria-hidden="true"><use href="#i-youtube"/></svg>
+                    <h2 id="yt-modal-title" class="modal-title">يوتيوب ▪ مشاهدة واستماع مشترك</h2>
+                </div>
+                <button type="button" id="close-youtube-btn" class="btn-close" aria-label="إغلاق">
+                    <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+                </button>
+            </header>
+
+            <!-- مؤشر لحظي عند قيام أي عضو بالبحث -->
+            <div id="yt-searching-indicator" class="yt-searching-banner" hidden>
+                <i class="live-dot"></i>
+                <span id="yt-searching-text">أحمد يبحث الآن على يوتيوب...</span>
+            </div>
+
+            <div class="yt-modal-search">
+                <form id="yt-search-form" class="yt-search-form">
+                    <div class="input-wrap">
+                        <svg class="icon input-icon" aria-hidden="true"><use href="#i-search"/></svg>
+                        <input id="yt-search-input" type="text" autocomplete="off" placeholder="ابحث أو الصق رابط فيديو من يوتيوب...">
+                    </div>
+                    <button type="submit" id="yt-submit-btn" class="btn btn-primary">
+                        <span>تشغيل / بحث</span>
+                    </button>
+                </form>
+
+                <div class="yt-options-row">
+                    <span class="yt-options-label">بدء التشغيل بوضع:</span>
+                    <div class="segmented-control">
+                        <button type="button" id="yt-opt-video" class="seg-btn active" data-mode="video">
+                            <svg class="icon" aria-hidden="true"><use href="#i-video"/></svg>
+                            <span>فيديو</span>
+                        </button>
+                        <button type="button" id="yt-opt-audio" class="seg-btn" data-mode="audio">
+                            <svg class="icon" aria-hidden="true"><use href="#i-music"/></svg>
+                            <span>صوت فقط</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- قائمة نتائج البحث -->
+            <div id="yt-results-container" class="yt-results-list" hidden>
+                <div id="yt-results-spinner" class="yt-loading" hidden>
+                    <span>جاري البحث في يوتيوب...</span>
+                </div>
+                <div id="yt-results-items" class="yt-cards-grid"></div>
+            </div>
+        </div>
     </div>
 
     <!-- ===================== نافذة إعدادات الخوادم ===================== -->

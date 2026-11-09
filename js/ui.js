@@ -39,10 +39,18 @@ const refs = {
 
     meAvatar: $('footer-user-avatar'),
     meName: $('footer-username'),
+    footerStatus: $('footer-status'),
 
     meterBar: $('mic-test-bar'),
     meterStatus: $('mic-test-status'),
     toasts: $('toast-container'),
+
+    ytModal: $('youtube-modal'),
+    ytSearchInput: $('yt-search-input'),
+    ytResultsContainer: $('yt-results-container'),
+    ytResultsItems: $('yt-results-items'),
+    ytResultsSpinner: $('yt-results-spinner'),
+    ytIndicator: $('yt-searching-indicator'),
 };
 
 const cards = new Map();
@@ -332,3 +340,94 @@ export function focusChatInput() {
 export function setBitrateText(text) {
     refs.bitrateText.textContent = text;
 }
+
+/* --------------------------- حالة التواجد والإنترنت --------------------------- */
+
+export function setPresenceStatus(isOnline) {
+    if (!refs.footerStatus) return;
+    if (isOnline) {
+        refs.footerStatus.classList.remove('me-status-disconnected');
+        refs.footerStatus.innerHTML = '<i class="live-dot"></i> ' + escapeHtml(STR.online);
+    } else {
+        refs.footerStatus.classList.add('me-status-disconnected');
+        refs.footerStatus.innerHTML =
+            '<svg class="icon icon-sm" aria-hidden="true"><use href="#i-wifi-off"/></svg> ' +
+            escapeHtml(STR.offlineStatus);
+    }
+}
+
+/* --------------------------- نافذة يوتيوب --------------------------- */
+
+export function openYouTubeModal() {
+    if (!refs.ytModal) return;
+    refs.ytModal.hidden = false;
+    refs.ytSearchInput?.focus();
+}
+
+export function closeYouTubeModal() {
+    if (!refs.ytModal) return;
+    refs.ytModal.hidden = true;
+}
+
+export function isYouTubeModalOpen() {
+    return Boolean(refs.ytModal && !refs.ytModal.hidden);
+}
+
+export function setSearchResultsLoading(loading) {
+    if (refs.ytResultsSpinner) refs.ytResultsSpinner.hidden = !loading;
+    if (refs.ytResultsContainer) refs.ytResultsContainer.hidden = false;
+}
+
+export function renderSearchResults(results, onSelect) {
+    if (!refs.ytResultsContainer || !refs.ytResultsItems) return;
+    refs.ytResultsItems.innerHTML = '';
+    if (refs.ytResultsSpinner) refs.ytResultsSpinner.hidden = true;
+    refs.ytResultsContainer.hidden = false;
+
+    if (!Array.isArray(results) || results.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'yt-loading';
+        empty.textContent = STR.ytNoResults;
+        refs.ytResultsItems.append(empty);
+        return;
+    }
+
+    for (const item of results) {
+        const card = document.createElement('div');
+        card.className = 'yt-result-card';
+        card.tabIndex = 0;
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-label', item.title);
+
+        const safeTitle = escapeHtml(item.title);
+        const safeAuthor = escapeHtml(item.author || '');
+        const safeThumb = escapeHtml(item.thumbnail);
+        const safeDuration = escapeHtml(item.durationFormatted || '0:00');
+
+        card.innerHTML = `
+            <div class="yt-thumb-wrap">
+                <img class="yt-thumb-img" src="${safeThumb}" alt="" loading="lazy">
+                <span class="yt-duration-badge">${safeDuration}</span>
+            </div>
+            <div class="yt-card-info">
+                <span class="yt-card-title">${safeTitle}</span>
+                <span class="yt-card-channel">${safeAuthor}</span>
+            </div>
+        `;
+
+        card.addEventListener('click', () => {
+            onSelect(item);
+            closeYouTubeModal();
+        });
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(item);
+                closeYouTubeModal();
+            }
+        });
+
+        refs.ytResultsItems.append(card);
+    }
+}
+
