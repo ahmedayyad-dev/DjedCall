@@ -29,7 +29,6 @@ export const STORAGE_KEYS = {
     name: 'djedcall:name',
     room: 'djedcall:room',
     servers: 'djedcall:servers',
-    ytQuality: 'djedcall:yt-quality',
 };
 
 /* خادم التنسيق الافتراضي الخاص بنا (PeerJS) */

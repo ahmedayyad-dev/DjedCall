@@ -59,7 +59,6 @@ const ytOptAudio = $('yt-opt-audio');
 const ytPlayToggleBtn = $('yt-play-toggle-btn');
 const ytStopBtn = $('yt-stop-btn');
 const ytModeToggleBtn = $('yt-mode-toggle-btn');
-const ytQualitySelect = $('yt-quality-select');
 const ytSeekBar = $('yt-seek-bar');
 
 const miniAudioPlayBtn = $('mini-audio-play-btn');
@@ -357,8 +356,6 @@ function init() {
 
     ytModeToggleBtn?.addEventListener('click', yt.toggleMode);
     miniAudioModeBtn?.addEventListener('click', yt.toggleMode);
-
-    ytQualitySelect?.addEventListener('change', (e) => yt.setPlaybackQuality(e.target.value));
 
     ytSeekBar?.addEventListener('change', () => handleSeek(ytSeekBar));
     miniAudioSeek?.addEventListener('change', () => handleSeek(miniAudioSeek));

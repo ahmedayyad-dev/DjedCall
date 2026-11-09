@@ -80,8 +80,7 @@ export const STR = {
     ytInvalidUrl: 'رابط يوتيوب غير صالح',
     ytResynced: 'تمت استعادة الاتصال وإعادة المزامنة مع الغرفة ✓',
     ytStopped: 'تم إيقاف الميديا',
-    ytQualityAuto: 'جودة: تلقائي',
-    ytQuality: (q) => `جودة: ${q}`,
+    ytAudioStreaming: 'جاري تشغيل تدفق الصوت المباشر...',
 
     netDisconnected: 'انقطع الاتصال بالإنترنت ▪ جاري المحاولة...',
     netReconnected: 'تمت استعادة الاتصال بالإنترنت بنجاح ✓',

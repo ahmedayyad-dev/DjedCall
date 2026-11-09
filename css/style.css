@@ -1827,24 +1827,6 @@
     cursor: pointer;
 }
 
-.yt-select {
-    padding: 4px 8px;
-    background: var(--surface-2);
-    color: var(--text-dim);
-    border: 1px solid var(--border);
-    border-radius: var(--pill);
-    font-family: inherit;
-    font-size: .72rem;
-    cursor: pointer;
-    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
-}
-
-.yt-select:hover,
-.yt-select:focus {
-    color: var(--text);
-    border-color: var(--gold);
-}
-
 .btn-sm {
     padding: 4px 10px;
     font-size: .75rem;

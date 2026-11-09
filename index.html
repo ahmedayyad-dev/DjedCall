@@ -213,15 +213,6 @@
                                 <input id="yt-seek-bar" type="range" min="0" max="100" value="0" step="0.5" class="yt-slider">
                                 <span id="yt-duration-time" class="mono">0:00</span>
                             </div>
-                            <select id="yt-quality-select" class="yt-select" title="جودة الفيديو لجهازك">
-                                <option value="auto">جودة: تلقائي</option>
-                                <option value="hd1080">1080p</option>
-                                <option value="hd720">720p</option>
-                                <option value="large">480p</option>
-                                <option value="medium">360p</option>
-                                <option value="small">240p</option>
-                                <option value="tiny">144p</option>
-                            </select>
                             <button id="yt-mode-toggle-btn" type="button" class="btn btn-ghost btn-sm" title="تحويل إلى صوت فقط">
                                 <svg class="icon" aria-hidden="true"><use href="#i-music"/></svg>
                                 <span id="yt-mode-label">صوت فقط</span>
@@ -445,7 +436,9 @@
         </div>
     </div>
 
-    <div id="audio-container" class="sr-only" aria-hidden="true"></div>
+    <div id="audio-container" class="sr-only" aria-hidden="true">
+        <audio id="yt-audio-player" preload="metadata"></audio>
+    </div>
 
     <script type="module" src="/js/app.js"></script>
 </body>

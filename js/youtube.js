@@ -2,7 +2,6 @@
 
 import {
     INVIDIOUS_INSTANCES,
-    STORAGE_KEYS,
     YT_DRIFT_INTERVAL,
     YT_DRIFT_THRESHOLD,
     YT_VIDEO_ID_PATTERN,
@@ -25,6 +24,10 @@ export const state = {
     playerReady: false,
     initPromise: null,
 
+    audioEl: null,
+    audioLoading: false,
+    audioUsingFallback: false,
+
     current: null,
     // current: {
     //   videoId, title, ownerId, ownerName,
@@ -42,6 +45,35 @@ export const state = {
     timelineTimer: null,
     selectedMode: 'video',
 };
+
+function getAudioElement() {
+    if (!state.audioEl) {
+        state.audioEl = $('yt-audio-player');
+        if (state.audioEl) {
+            state.audioEl.addEventListener('play', () => {
+                if (!state.current) return;
+                state.current.isPlaying = true;
+                updatePlayButtons(true);
+            });
+            state.audioEl.addEventListener('pause', () => {
+                if (!state.current) return;
+                state.current.isPlaying = false;
+                updatePlayButtons(false);
+            });
+            state.audioEl.addEventListener('ended', () => {
+                stopMedia({ broadcast: isOwner() });
+            });
+            state.audioEl.addEventListener('error', () => {
+                // في حال تعذر خادم الصوت الخارجي، الرجوع الاحتياطي للمشغل بدون توقف الصوت
+                if (effectiveMode() === 'audio' && !state.audioUsingFallback) {
+                    state.audioUsingFallback = true;
+                    fallbackToIframeAudio();
+                }
+            });
+        }
+    }
+    return state.audioEl;
+}
 
 /* --------------------------- تحميل واجهة YouTube API --------------------------- */
 
@@ -106,7 +138,6 @@ export async function initPlayer() {
             events: {
                 onReady: () => {
                     state.playerReady = true;
-                    applySavedQuality();
                     startTimelineWatcher();
                     resolve(state.player);
                 },
@@ -121,6 +152,7 @@ export async function initPlayer() {
 
 function onPlayerStateChange(event) {
     if (!state.current) return;
+    if (effectiveMode() === 'audio' && !state.audioUsingFallback) return;
 
     const code = event.data;
     const isPlaying = code === window.YT.PlayerState.PLAYING;
@@ -144,7 +176,6 @@ function onPlayerStateChange(event) {
         return;
     }
 
-    // التعافي التلقائي فور انتهاء الـ Buffering
     if (isPlaying) {
         state.current.isPlaying = true;
         updatePlayButtons(true);
@@ -154,7 +185,6 @@ function onPlayerStateChange(event) {
             startDriftChecker();
             broadcastSync('play', currentSec);
         } else if (state.current.lastHostTime) {
-            // التحقق من الانجراف واللحاق بالناس
             const elapsed = (Date.now() - (state.current.lastHostTimeAt || Date.now())) / 1000;
             const target = state.current.lastHostTime + (state.current.isPlaying ? elapsed : 0);
             if (Math.abs(target - currentSec) > YT_DRIFT_THRESHOLD) {
@@ -172,7 +202,7 @@ function onPlayerStateChange(event) {
             broadcastSync('pause', state.player.getCurrentTime());
         }
     } else if (isBuffering) {
-        // عند حدوث تعليق، لا نرسل أي أمر إيقاف للآخرين ليستمروا بالمشاهدة
+        // لا نرسل أمر إيقاف للآخرين أثناء التحميل المؤقت
     }
 }
 
@@ -215,6 +245,85 @@ export async function loadMedia({
         lastHostTimeAt: Date.now(),
     };
 
+    state.audioUsingFallback = false;
+
+    if (effectiveMode() === 'audio') {
+        applyAudioMode(videoId, startTime, isPlaying);
+    } else {
+        applyVideoMode(videoId, startTime, isPlaying);
+    }
+
+    renderMediaUI();
+
+    if (isOwner()) {
+        startDriftChecker();
+    } else {
+        stopDriftChecker();
+    }
+}
+
+async function applyAudioMode(videoId, startTime = 0, isPlaying = true) {
+    // 1. إيقاف مشغل الفيديو كلياً لمنع استهلاك الباقة ومعالجة الفيديو
+    if (state.player && state.playerReady) {
+        try {
+            state.player.pauseVideo();
+        } catch {}
+    }
+
+    const audioEl = getAudioElement();
+    if (!audioEl) return;
+
+    state.audioLoading = true;
+    state.audioUsingFallback = false;
+
+    try {
+        const streamUrl = await resolveAudioStreamUrl(videoId);
+        if (streamUrl && effectiveMode() === 'audio') {
+            audioEl.src = streamUrl;
+            audioEl.currentTime = startTime;
+            if (isPlaying) {
+                audioEl.play().catch(() => {
+                    // إذا منع المتصفح التشغيل التلقائي للصوت
+                });
+            }
+            state.audioLoading = false;
+            return;
+        }
+    } catch {
+        /* فشل جلب الرابط المباشر من الـ CDN */
+    }
+
+    state.audioLoading = false;
+    // احتياطي: تشغيل المشغل بدون إطار الفيديو لضمان استمرار الصوت
+    fallbackToIframeAudio();
+}
+
+function fallbackToIframeAudio() {
+    if (!state.player || !state.playerReady || !state.current) return;
+    state.isRemoteAction = true;
+    try {
+        state.player.seekTo(state.current.currentTime, true);
+        if (state.current.isPlaying) {
+            state.player.playVideo();
+        }
+    } finally {
+        setTimeout(() => {
+            state.isRemoteAction = false;
+        }, 400);
+    }
+}
+
+function applyVideoMode(videoId, startTime = 0, isPlaying = true) {
+    // إيقاف وتفريغ عنصر الصوت المنفصل
+    const audioEl = getAudioElement();
+    if (audioEl) {
+        audioEl.pause();
+        audioEl.removeAttribute('src');
+        audioEl.load();
+    }
+
+    if (!state.player || !state.playerReady) return;
+
     state.isRemoteAction = true;
     try {
         state.player.loadVideoById({
@@ -229,38 +338,45 @@ export async function loadMedia({
             state.isRemoteAction = false;
         }, 500);
     }
-
-    renderMediaUI();
-
-    if (isOwner()) {
-        startDriftChecker();
-    } else {
-        stopDriftChecker();
-    }
 }
 
 export function playMedia() {
-    if (!state.player || !state.current) return;
+    if (!state.current) return;
     state.current.isPlaying = true;
-    state.player.playVideo();
+
+    const audioEl = getAudioElement();
+    if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl && audioEl.src) {
+        audioEl.play().catch(() => {});
+    } else if (state.player && state.playerReady) {
+        state.player.playVideo();
+    }
+
     updatePlayButtons(true);
     if (isOwner()) {
-        broadcastSync('play', state.player.getCurrentTime());
+        broadcastSync('play', getCurrentPlaybackTime());
     }
 }
 
 export function pauseMedia() {
-    if (!state.player || !state.current) return;
+    if (!state.current) return;
     state.current.isPlaying = false;
-    state.player.pauseVideo();
+
+    const audioEl = getAudioElement();
+    if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl) {
+        audioEl.pause();
+    }
+    if (state.player && state.playerReady) {
+        state.player.pauseVideo();
+    }
+
     updatePlayButtons(false);
     if (isOwner()) {
-        broadcastSync('pause', state.player.getCurrentTime());
+        broadcastSync('pause', getCurrentPlaybackTime());
     }
 }
 
 export function togglePlay() {
-    if (!state.player || !state.current) return;
+    if (!state.current) return;
     if (state.current.isPlaying) {
         pauseMedia();
     } else {
@@ -269,12 +385,19 @@ export function togglePlay() {
 }
 
 export function seekMedia(seconds) {
-    if (!state.player || !state.current) return;
+    if (!state.current) return;
     const target = Math.max(0, Math.min(seconds, state.current.duration || seconds));
+    state.current.currentTime = target;
+
     state.isRemoteAction = true;
     try {
-        state.player.seekTo(target, true);
-        state.current.currentTime = target;
+        const audioEl = getAudioElement();
+        if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl && audioEl.src) {
+            audioEl.currentTime = target;
+        }
+        if (state.player && state.playerReady) {
+            state.player.seekTo(target, true);
+        }
         updateTimeDisplays(target, state.current.duration);
     } finally {
         setTimeout(() => {
@@ -289,12 +412,18 @@ export function seekMedia(seconds) {
 
 export function stopMedia({ broadcast = true } = {}) {
     stopDriftChecker();
+
+    const audioEl = getAudioElement();
+    if (audioEl) {
+        audioEl.pause();
+        audioEl.removeAttribute('src');
+        audioEl.load();
+    }
+
     if (state.player && state.playerReady) {
         try {
             state.player.stopVideo();
-        } catch {
-            /* تجاهل أخطاء المشغل */
-        }
+        } catch {}
     }
 
     if (broadcast && isOwner()) {
@@ -306,28 +435,52 @@ export function stopMedia({ broadcast = true } = {}) {
     uiModule?.toast(STR.ytStopped, 'info');
 }
 
+function getCurrentPlaybackTime() {
+    const audioEl = getAudioElement();
+    if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl && audioEl.src) {
+        return audioEl.currentTime || 0;
+    }
+    if (state.player && state.playerReady) {
+        return state.player.getCurrentTime() || 0;
+    }
+    return state.current?.currentTime || 0;
+}
+
 /* --------------------------- صلاحيات الوضع: صاحب الطلب مقابل التفضيل الشخصي --------------------------- */
 
 export function switchMode(targetMode) {
     if (!state.current) return;
     const mode = targetMode === 'audio' ? 'audio' : 'video';
+    const currentTime = getCurrentPlaybackTime();
 
     if (isOwner()) {
         // صاحب الطلب: التغيير يطبق عند الجميع
         state.current.globalMode = mode;
         state.current.personalMode = null;
-        renderMediaUI();
+        applyModeChange(mode, currentTime);
         rtcModule?.broadcast?.({
             type: 'yt-mode',
             mode,
+            time: currentTime,
             by: rtcModule.state.myId,
         });
         uiModule?.toast(STR.ytOwnerModeChanged(mode === 'audio' ? STR.ytModeAudio : STR.ytModeVideo), 'ok');
     } else {
         // مشارك آخر: تفضيل محلي فقط
         state.current.personalMode = mode;
-        renderMediaUI();
+        applyModeChange(mode, currentTime);
         uiModule?.toast(mode === 'audio' ? STR.ytPersonalModeAudio : STR.ytPersonalModeVideo, 'ok');
+    }
+}
+
+function applyModeChange(mode, currentTime) {
+    renderMediaUI();
+    if (!state.current) return;
+
+    if (mode === 'audio') {
+        applyAudioMode(state.current.videoId, currentTime, state.current.isPlaying);
+    } else {
+        applyVideoMode(state.current.videoId, currentTime, state.current.isPlaying);
     }
 }
 
@@ -337,47 +490,17 @@ export function toggleMode() {
     switchMode(next);
 }
 
-/* --------------------------- ضبط الجودة المستقلة --------------------------- */
-
-export function setPlaybackQuality(quality) {
-    state.activeQuality = quality;
-    try {
-        localStorage.setItem(STORAGE_KEYS.ytQuality, quality);
-    } catch {
-        /* مساحة التخزين غير متاحة */
-    }
-
-    if (state.player && state.playerReady && typeof state.player.setPlaybackQuality === 'function') {
-        state.player.setPlaybackQuality(quality);
-    }
-
-    const select = $('yt-quality-select');
-    if (select && select.value !== quality) {
-        select.value = quality;
-    }
-}
-
-function applySavedQuality() {
-    let saved = 'auto';
-    try {
-        saved = localStorage.getItem(STORAGE_KEYS.ytQuality) || 'auto';
-    } catch {
-        saved = 'auto';
-    }
-    setPlaybackQuality(saved);
-}
-
 /* --------------------------- محرك التزامن والانجراف --------------------------- */
 
 function startDriftChecker() {
     stopDriftChecker();
     state.driftTimer = setInterval(() => {
-        if (!state.current || !isOwner() || !state.player || !state.playerReady) {
+        if (!state.current || !isOwner()) {
             stopDriftChecker();
             return;
         }
 
-        const time = state.player.getCurrentTime();
+        const time = getCurrentPlaybackTime();
         broadcastSync('tick', time);
     }, YT_DRIFT_INTERVAL);
 }
@@ -406,17 +529,25 @@ function startTimelineWatcher() {
     if (state.timelineTimer) clearInterval(state.timelineTimer);
 
     state.timelineTimer = setInterval(() => {
-        if (!state.current || !state.player || !state.playerReady) return;
+        if (!state.current) return;
 
         try {
-            const current = state.player.getCurrentTime() || 0;
-            const duration = state.player.getDuration() || 0;
+            const audioEl = getAudioElement();
+            let current = 0;
+            let duration = state.current.duration || 0;
+
+            if (effectiveMode() === 'audio' && !state.audioUsingFallback && audioEl && audioEl.src) {
+                current = audioEl.currentTime || 0;
+                duration = audioEl.duration || duration;
+            } else if (state.player && state.playerReady) {
+                current = state.player.getCurrentTime() || 0;
+                duration = state.player.getDuration() || duration;
+            }
+
             state.current.currentTime = current;
             state.current.duration = duration;
             updateTimeDisplays(current, duration);
-        } catch {
-            /* المشغل غير متاح حالياً */
-        }
+        } catch {}
     }, 500);
 }
 
@@ -469,38 +600,20 @@ export function handleRemoteSync(message) {
     state.current.lastHostTime = target;
     state.current.lastHostTimeAt = now;
 
-    if (!state.player || !state.playerReady) return;
-
-    const myTime = state.player.getCurrentTime();
+    const myTime = getCurrentPlaybackTime();
     const diff = Math.abs(myTime - target);
 
     if (message.action === 'seek' || diff > YT_DRIFT_THRESHOLD) {
-        state.isRemoteAction = true;
-        state.player.seekTo(target, true);
-        setTimeout(() => {
-            state.isRemoteAction = false;
-        }, 300);
+        seekMedia(target);
     }
 
     if (message.action === 'play' || message.isPlaying) {
         if (!state.current.isPlaying) {
-            state.current.isPlaying = true;
-            state.isRemoteAction = true;
-            state.player.playVideo();
-            updatePlayButtons(true);
-            setTimeout(() => {
-                state.isRemoteAction = false;
-            }, 300);
+            playMedia();
         }
     } else if (message.action === 'pause' || !message.isPlaying) {
         if (state.current.isPlaying) {
-            state.current.isPlaying = false;
-            state.isRemoteAction = true;
-            state.player.pauseVideo();
-            updatePlayButtons(false);
-            setTimeout(() => {
-                state.isRemoteAction = false;
-            }, 300);
+            pauseMedia();
         }
     }
 }
@@ -510,7 +623,7 @@ export function handleRemoteMode(message) {
     if (message.mode === 'video' || message.mode === 'audio') {
         state.current.globalMode = message.mode;
         state.current.personalMode = null;
-        renderMediaUI();
+        applyModeChange(message.mode, Number(message.time) || state.current.currentTime);
         uiModule?.toast(
             STR.ytOwnerModeChanged(message.mode === 'audio' ? STR.ytModeAudio : STR.ytModeVideo),
             'info',
@@ -525,7 +638,7 @@ export function handleRemoteStop() {
 export function handleStateRequest(targetPeerConn) {
     if (!state.current || !targetPeerConn) return;
 
-    const currentSec = state.player && state.playerReady ? state.player.getCurrentTime() : state.current.currentTime;
+    const currentSec = getCurrentPlaybackTime();
 
     targetPeerConn.send({
         type: 'yt-state-resp',
@@ -564,6 +677,28 @@ export function requestStateFromPeers() {
     if (rtcModule?.broadcast) {
         rtcModule.broadcast({ type: 'yt-state-req' });
     }
+}
+
+/* --------------------------- استخراج رابط تدفق الصوت من CDN --------------------------- */
+
+async function resolveAudioStreamUrl(videoId) {
+    for (const instance of INVIDIOUS_INSTANCES) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3500);
+
+            // فحص وجود مسار الصوت itag 140
+            const directUrl = `${instance}/latest_version?id=${videoId}&itag=140&local=true`;
+            const testRes = await fetch(directUrl, { method: 'HEAD', signal: controller.signal });
+            clearTimeout(timeout);
+
+            if (testRes.ok || testRes.status === 206) {
+                return directUrl;
+            }
+        } catch {}
+    }
+
+    return null;
 }
 
 /* --------------------------- مؤشر البحث وإرسال النشاط --------------------------- */
@@ -623,9 +758,7 @@ export async function searchVideos(query) {
                 lengthSeconds: item.lengthSeconds || 0,
                 durationFormatted: item.lengthSeconds ? formatDuration(item.lengthSeconds) : '0:00',
             }));
-        } catch {
-            /* جرب الخادم التالي */
-        }
+        } catch {}
     }
 
     return [];
